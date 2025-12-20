@@ -1,8 +1,17 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Home, Gift, Wallet, User } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 
 const Layout = ({ children }) => {
+    const mainRef = useRef(null);
+    const location = useLocation();
+
+    useEffect(() => {
+        if (mainRef.current) {
+            mainRef.current.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+        }
+    }, [location.pathname]);
+
     return (
         <div className="min-h-screen bg-gray-100 flex justify-center">
             {/* Mobile Container - limits width on desktop to look like a phone */}
@@ -30,7 +39,7 @@ const Layout = ({ children }) => {
                 </header>
 
                 {/* MAIN CONTENT AREA (Scrollable) */}
-                <main className="flex-1 overflow-y-auto pb-20 bg-blue-50">
+                <main ref={mainRef} className="flex-1 overflow-y-auto pb-20 bg-blue-50">
                     {children}
                 </main>
 
