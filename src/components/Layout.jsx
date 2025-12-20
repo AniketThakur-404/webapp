@@ -18,11 +18,13 @@ const Layout = ({ children }) => {
             <div className="w-full max-w-md bg-white min-h-screen shadow-2xl relative flex flex-col">
 
                 {/* TOP HEADER */}
-                <header className="bg-white p-4 sticky top-0 z-50 shadow-sm flex justify-between items-center">
+                <header className="bg-white px-4 py-[16px] sticky top-0 z-50 shadow-sm flex justify-between items-center">
                     <div className="flex items-center gap-2">
-                        <h1 className="text-xl font-bold text-gray-800 flex items-center gap-1">
-                            <span className="text-blue-500">✔</span> Verify
-                        </h1>
+                        <img
+                            src="/incentify-logo-clean.png"
+                            alt="Incentify Online"
+                            className="h-16 w-auto object-contain"
+                        />
                     </div>
 
                     <div className="flex items-center gap-3">
@@ -44,8 +46,8 @@ const Layout = ({ children }) => {
                 </main>
 
                 {/* BOTTOM NAVIGATION */}
-                <nav className="fixed bottom-0 w-full max-w-md bg-white border-t border-gray-200 flex justify-around py-3 pb-4 z-50 safe-area-bottom">
-                    <NavItem to="/" icon={<Home size={20} />} label="Verify" />
+                <nav className="fixed bottom-0 w-full max-w-md bg-white border-t border-gray-200 grid grid-cols-3 py-3 pb-4 z-50 safe-area-bottom px-2">
+                    <NavItem to="/" icon={<Home size={20} />} label="Incentify Online" />
                     <NavItem to="/gift-cards" icon={<Gift size={20} />} label="Gift Card" />
                     <NavItem to="/wallet" icon={<Wallet size={20} />} label="vCash" />
                 </nav>
@@ -59,9 +61,12 @@ const NavItem = ({ to, icon, label }) => {
     const location = useLocation();
     const isActive = location.pathname === to;
     return (
-        <Link to={to} className={`flex flex-col items-center gap-1 ${isActive ? 'text-blue-600' : 'text-gray-400'}`}>
+        <Link
+            to={to}
+            className={`flex flex-col items-center gap-1 text-center ${isActive ? 'text-blue-600' : 'text-gray-400'}`}
+        >
             {icon}
-            <span className="text-xs font-medium">{label}</span>
+            <span className="text-[10px] font-medium leading-tight">{label}</span>
         </Link>
     );
 };

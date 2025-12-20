@@ -17,8 +17,8 @@ const ProductInfo = () => {
 
   const steps = [
     {
-      title: 'Look for Verify Logo',
-      description: 'Check the Verify logo on products (online or offline).',
+      title: 'Look for Incentify Online Logo',
+      description: 'Check the Incentify Online logo on products (online or offline).',
       icon: <BadgeCheck size={16} className="text-blue-600" />,
     },
     {
@@ -94,7 +94,7 @@ const ProductInfo = () => {
         </div>
 
         <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm space-y-3">
-          <div className="text-sm font-semibold text-gray-800">How Verify Works?</div>
+          <div className="text-sm font-semibold text-gray-800">How Incentify Online Works?</div>
           <div className="grid grid-cols-3 gap-3">
             {steps.map((step) => (
               <div

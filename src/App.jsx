@@ -3,6 +3,8 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Layout from './components/Layout';
 import Home from './pages/Home';
 import GiftCards from './pages/GiftCards';
+import GiftCardsList from './pages/GiftCardsList';
+import GiftCardInfo from './pages/GiftCardInfo';
 import BrandDetails from './pages/BrandDetails';
 import ProductInfo from './pages/ProductInfo';
 
@@ -23,6 +25,10 @@ function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/gift-cards" element={<GiftCards />} />
+          <Route path="/gift-cards-list" element={<GiftCardsList />} />
+          <Route path="/gift-cards-list/:categoryId" element={<GiftCardsList />} />
+          <Route path="/gift-card-info" element={<GiftCardInfo />} />
+          <Route path="/gift-card-info/:id" element={<GiftCardInfo />} />
           <Route path="/wallet" element={<Wallet />} />
           <Route path="/brand-details" element={<BrandDetails />} />
           <Route path="/brand-details/:id" element={<BrandDetails />} />

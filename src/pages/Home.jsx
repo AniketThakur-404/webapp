@@ -18,7 +18,7 @@ const stats = [
 ];
 
 const quickActions = [
-    { icon: <Scan size={24} />, label: "Scan & Verify", color: "bg-blue-600" },
+    { icon: <Scan size={24} />, label: "Scan & Incentify Online", color: "bg-blue-600" },
     { icon: <Clock size={24} />, label: "Product History", color: "bg-blue-600" },
     { icon: <Gift size={24} />, label: "Rewards History", color: "bg-blue-600" },
     { icon: <FileText size={24} />, label: "Product Reports", color: "bg-blue-600" },
@@ -111,10 +111,10 @@ const Home = () => {
                 </div>
             </section>
 
-            {/* 4. Verify Brands Grid */}
+            {/* 4. Incentify Brands Grid */}
             <section>
                 <div className="flex justify-between items-center mb-3 px-1">
-                    <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Verify Brands</h2>
+                    <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Incentify Online Brands</h2>
                     <Link
                         to="/brand-details"
                         className="text-[10px] text-blue-600 font-bold flex items-center gap-0.5"
@@ -136,10 +136,10 @@ const Home = () => {
                 </div>
             </section>
 
-            {/* 5. Verify Scan Offers (Horizontal Scroll) */}
+            {/* 5. Incentify Scan Offers (Horizontal Scroll) */}
             <section>
                 <div className="flex justify-between items-center mb-3 px-1">
-                    <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Verify Scan Offers</h2>
+                    <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Incentify Online Scan Offers</h2>
                     <Link to="/product-info" className="text-[10px] text-blue-600 font-bold">
                         View more
                     </Link>
