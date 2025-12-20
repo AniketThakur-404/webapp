@@ -1,0 +1,60 @@
+import React from 'react';
+import { Home, Gift, Wallet, User } from 'lucide-react';
+import { Link, useLocation } from 'react-router-dom';
+
+const Layout = ({ children }) => {
+    return (
+        <div className="min-h-screen bg-gray-100 flex justify-center">
+            {/* Mobile Container - limits width on desktop to look like a phone */}
+            <div className="w-full max-w-md bg-white min-h-screen shadow-2xl relative flex flex-col">
+
+                {/* TOP HEADER */}
+                <header className="bg-white p-4 sticky top-0 z-50 shadow-sm flex justify-between items-center">
+                    <div className="flex items-center gap-2">
+                        <h1 className="text-xl font-bold text-gray-800 flex items-center gap-1">
+                            <span className="text-blue-500">✔</span> Verify
+                        </h1>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                        {/* Wallet Balance Pill */}
+                        <div className="bg-blue-600 text-white px-3 py-1 rounded-full flex items-center gap-1 text-sm font-medium shadow-md">
+                            <Wallet size={14} />
+                            <span>₹ 0.00</span>
+                        </div>
+                        {/* Profile Icon */}
+                        <div className="w-8 h-8 bg-yellow-400 rounded-full flex items-center justify-center border border-gray-200">
+                            <User size={16} className="text-gray-700" />
+                        </div>
+                    </div>
+                </header>
+
+                {/* MAIN CONTENT AREA (Scrollable) */}
+                <main className="flex-1 overflow-y-auto pb-20 bg-blue-50">
+                    {children}
+                </main>
+
+                {/* BOTTOM NAVIGATION */}
+                <nav className="fixed bottom-0 w-full max-w-md bg-white border-t border-gray-200 flex justify-around py-3 pb-4 z-50 safe-area-bottom">
+                    <NavItem to="/" icon={<Home size={20} />} label="Verify" />
+                    <NavItem to="/gift-cards" icon={<Gift size={20} />} label="Gift Card" />
+                    <NavItem to="/wallet" icon={<Wallet size={20} />} label="vCash" />
+                </nav>
+            </div>
+        </div>
+    );
+};
+
+// Helper Component for Nav Items
+const NavItem = ({ to, icon, label }) => {
+    const location = useLocation();
+    const isActive = location.pathname === to;
+    return (
+        <Link to={to} className={`flex flex-col items-center gap-1 ${isActive ? 'text-blue-600' : 'text-gray-400'}`}>
+            {icon}
+            <span className="text-xs font-medium">{label}</span>
+        </Link>
+    );
+};
+
+export default Layout;
