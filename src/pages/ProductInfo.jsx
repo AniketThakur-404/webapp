@@ -1,7 +1,8 @@
 import React from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { BadgeCheck, ChevronLeft, ChevronRight, Scan, Gift } from 'lucide-react';
+import { BadgeCheck, ChevronRight, Scan, Gift } from 'lucide-react';
 import { brandCatalog, productCatalog } from '../data/catalog';
+import FallbackImage from '../components/FallbackImage';
 
 const ProductInfo = () => {
   const { id } = useParams();
@@ -35,21 +36,9 @@ const ProductInfo = () => {
 
   return (
     <div className="bg-blue-50/70 min-h-full pb-24">
-      <div className="px-4 pt-4">
-        <div className="flex items-center gap-3">
-          <Link
-            to={brand ? `/brand-details/${brand.id}` : '/brand-details'}
-            className="w-9 h-9 rounded-full border border-gray-100 bg-white shadow-sm flex items-center justify-center"
-          >
-            <ChevronLeft size={18} className="text-gray-700" />
-          </Link>
-          <h2 className="text-base font-semibold text-gray-800">Product Info</h2>
-        </div>
-      </div>
-
       <div className="px-4 mt-4 space-y-4">
         <div className="relative rounded-2xl overflow-hidden bg-white border border-gray-100 shadow-sm">
-          <img
+          <FallbackImage
             src={product.banner || product.image}
             alt={`${product.name} banner`}
             className="w-full h-44 object-cover"

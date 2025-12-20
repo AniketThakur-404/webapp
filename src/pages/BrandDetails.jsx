@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { BadgeCheck, ChevronLeft, ChevronRight, Globe, Mail, MessageCircle, Search } from 'lucide-react';
+import { BadgeCheck, ChevronRight, Globe, Mail, MessageCircle, Search } from 'lucide-react';
 import { brandCatalog, productCatalog } from '../data/catalog';
+import FallbackImage from '../components/FallbackImage';
 
 const titleFromSlug = (slug) => {
   if (!slug) return 'Brand';
@@ -58,21 +59,9 @@ const BrandDetails = () => {
 
   return (
     <div className="bg-blue-50/70 min-h-full pb-24">
-      <div className="px-4 pt-4">
-        <div className="flex items-center gap-3">
-          <Link
-            to="/"
-            className="w-9 h-9 rounded-full border border-gray-100 bg-white shadow-sm flex items-center justify-center"
-          >
-            <ChevronLeft size={18} className="text-gray-700" />
-          </Link>
-          <h2 className="text-base font-semibold text-gray-800">Brand Details</h2>
-        </div>
-      </div>
-
       <div className="px-4 mt-4 space-y-4">
         <div className="rounded-2xl overflow-hidden bg-white border border-gray-100 shadow-sm">
-          <img
+          <FallbackImage
             src={displayBrand.banner}
             alt={`${displayBrand.name} banner`}
             className="w-full h-36 object-cover"
@@ -178,7 +167,7 @@ const BrandDetails = () => {
                 to={`/product-info/${product.id}`}
                 className="bg-white p-3 rounded-xl border border-gray-100 flex items-center gap-3 shadow-sm hover:shadow-md transition-shadow"
               >
-                <img
+                <FallbackImage
                   src={product.image}
                   alt={product.name}
                   className="w-12 h-12 object-contain rounded-lg bg-blue-50"

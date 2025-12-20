@@ -1,10 +1,36 @@
 import React, { useEffect, useRef } from 'react';
-import { Home, Gift, Wallet, User } from 'lucide-react';
-import { Link, useLocation } from 'react-router-dom';
+import { ChevronLeft, Gift, Home, User, Wallet } from 'lucide-react';
+import { Link, useLocation, useMatch, useNavigate } from 'react-router-dom';
+import { giftCardCategories, giftCards } from '../data/giftcards';
 
 const Layout = ({ children }) => {
     const mainRef = useRef(null);
     const location = useLocation();
+    const navigate = useNavigate();
+    const giftCardsListMatch = useMatch('/gift-cards-list/:categoryId');
+    const giftCardInfoMatch = useMatch('/gift-card-info/:id');
+    const isHome = location.pathname === '/';
+
+    const headerTitle = (() => {
+        if (isHome) return '';
+        if (giftCardInfoMatch?.params?.id) {
+            const card = giftCards.find((item) => item.id === giftCardInfoMatch.params.id);
+            return card?.name || 'Gift Card Info';
+        }
+        if (giftCardsListMatch?.params?.categoryId) {
+            const category = giftCardCategories.find(
+                (item) => item.id === giftCardsListMatch.params.categoryId
+            );
+            return category?.name || 'Gift Cards';
+        }
+        if (location.pathname.startsWith('/gift-cards-list')) return 'Gift Cards';
+        if (location.pathname.startsWith('/gift-card-info')) return 'Gift Card Info';
+        if (location.pathname.startsWith('/gift-cards')) return 'Gift Card';
+        if (location.pathname.startsWith('/wallet')) return 'vCash';
+        if (location.pathname.startsWith('/brand-details')) return 'Brand Details';
+        if (location.pathname.startsWith('/product-info')) return 'Product Info';
+        return 'Incentify Online';
+    })();
 
     useEffect(() => {
         if (mainRef.current) {
@@ -18,26 +44,46 @@ const Layout = ({ children }) => {
             <div className="w-full max-w-md bg-white min-h-screen shadow-2xl relative flex flex-col">
 
                 {/* TOP HEADER */}
-                <header className="bg-white px-4 py-[16px] sticky top-0 z-50 shadow-sm flex justify-between items-center">
-                    <div className="flex items-center gap-2">
-                        <img
-                            src="/incentify-logo-clean.png"
-                            alt="Incentify Online"
-                            className="h-16 w-auto object-contain"
-                        />
-                    </div>
+                <header
+                    className={`bg-white px-4 py-[16px] sticky top-0 z-50 shadow-sm flex items-center ${
+                        isHome ? 'justify-between' : 'justify-start'
+                    }`}
+                >
+                    {isHome ? (
+                        <>
+                            <div className="flex items-center gap-2">
+                                <img
+                                    src="/incentify-logo-clean.png"
+                                    alt="Incentify Online"
+                                    className="h-16 w-auto object-contain"
+                                />
+                            </div>
 
-                    <div className="flex items-center gap-3">
-                        {/* Wallet Balance Pill */}
-                        <div className="bg-blue-600 text-white px-3 py-1 rounded-full flex items-center gap-1 text-sm font-medium shadow-md">
-                            <Wallet size={14} />
-                            <span>₹ 0.00</span>
+                            <div className="flex items-center gap-3">
+                                {/* Wallet Balance Pill */}
+                                <div className="bg-blue-600 text-white px-3 py-1 rounded-full flex items-center gap-1 text-sm font-medium shadow-md">
+                                    <Wallet size={14} />
+                                    <span>₹ 0.00</span>
+                                </div>
+                                {/* Profile Icon */}
+                                <div className="w-8 h-8 bg-yellow-400 rounded-full flex items-center justify-center border border-gray-200">
+                                    <User size={16} className="text-gray-700" />
+                                </div>
+                            </div>
+                        </>
+                    ) : (
+                        <div className="flex items-center gap-3">
+                            <button
+                                type="button"
+                                onClick={() => navigate(-1)}
+                                className="w-9 h-9 rounded-full border border-gray-100 bg-white shadow-sm flex items-center justify-center"
+                                aria-label="Go back"
+                            >
+                                <ChevronLeft size={18} className="text-gray-700" />
+                            </button>
+                            <h1 className="text-base font-semibold text-gray-800">{headerTitle}</h1>
                         </div>
-                        {/* Profile Icon */}
-                        <div className="w-8 h-8 bg-yellow-400 rounded-full flex items-center justify-center border border-gray-200">
-                            <User size={16} className="text-gray-700" />
-                        </div>
-                    </div>
+                    )}
                 </header>
 
                 {/* MAIN CONTENT AREA (Scrollable) */}

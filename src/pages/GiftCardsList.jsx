@@ -1,16 +1,12 @@
 import React, { useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Percent, Search } from 'lucide-react';
-import { giftCardCategories, giftCards } from '../data/giftcards';
+import { ChevronRight, Percent, Search } from 'lucide-react';
+import { giftCards } from '../data/giftcards';
+import FallbackImage from '../components/FallbackImage';
 
 const GiftCardsList = () => {
   const { categoryId } = useParams();
   const [query, setQuery] = useState('');
-
-  const category = useMemo(
-    () => giftCardCategories.find((item) => item.id === categoryId),
-    [categoryId]
-  );
 
   const filteredCards = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -21,22 +17,8 @@ const GiftCardsList = () => {
     });
   }, [categoryId, query]);
 
-  const title = category ? category.name : 'Gift Cards';
-
   return (
     <div className="bg-blue-50/70 min-h-full pb-24">
-      <div className="px-4 pt-4">
-        <div className="flex items-center gap-3">
-          <Link
-            to="/gift-cards"
-            className="w-9 h-9 rounded-full border border-gray-100 bg-white shadow-sm flex items-center justify-center"
-          >
-            <ChevronLeft size={18} className="text-gray-700" />
-          </Link>
-          <h2 className="text-base font-semibold text-gray-800">{title}</h2>
-        </div>
-      </div>
-
       <div className="px-4 mt-4 space-y-4">
         <div className="relative">
           <Search
@@ -70,7 +52,7 @@ const GiftCardsList = () => {
                 to={`/gift-card-info/${card.id}`}
                 className="bg-white rounded-xl border border-gray-100 p-3 flex items-center gap-3 shadow-sm hover:shadow-md transition-shadow"
               >
-                <img
+                <FallbackImage
                   src={card.logo}
                   alt={card.name}
                   className="w-12 h-12 rounded-lg object-cover bg-gray-50"

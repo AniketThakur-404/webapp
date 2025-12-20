@@ -2,6 +2,7 @@ import React from 'react';
 import { Search } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { giftCardCategories, giftCards } from '../data/giftcards';
+import FallbackImage from '../components/FallbackImage';
 
 const GiftCards = () => {
     return (
@@ -68,7 +69,7 @@ const GiftCards = () => {
                                 to={`/gift-card-info/${card.id}`}
                                 className="flex items-center gap-4 border-b border-gray-50 pb-3 last:border-0 cursor-pointer hover:bg-gray-50 px-2 -mx-2 rounded-lg transition-colors"
                             >
-                                <img
+                                <FallbackImage
                                     src={card.logo}
                                     alt={card.name}
                                     className="w-12 h-12 rounded-xl object-cover bg-gray-50 shadow-sm"

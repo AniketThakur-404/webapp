@@ -3,6 +3,7 @@ import { Scan, Clock, Gift, FileText, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { brandCatalog } from '../data/catalog';
+import FallbackImage from '../components/FallbackImage';
 
 // Mock Data
 const heroBanners = [
@@ -64,7 +65,11 @@ const HeroCarousel = () => {
                             Explore Now
                         </Link>
                     </div>
-                    <img src={heroBanners[current].img} alt="Offer" className="w-20 h-20 rounded-lg object-cover bg-white/20" />
+                    <FallbackImage
+                        src={heroBanners[current].img}
+                        alt="Offer"
+                        className="w-20 h-20 rounded-lg object-cover bg-white/20"
+                    />
                 </motion.div>
             </AnimatePresence>
 
@@ -129,7 +134,11 @@ const Home = () => {
                             to={`/brand-details/${brand.id}`}
                             className="bg-white p-3 rounded-lg border border-gray-100 flex flex-col items-center gap-2 shadow-sm hover:shadow-md transition-shadow"
                         >
-                            <img src={brand.logo} className="w-10 h-10 object-contain" alt={brand.name} />
+                            <FallbackImage
+                                src={brand.logo}
+                                alt={brand.name}
+                                className="w-10 h-10 object-contain"
+                            />
                             <span className="text-[10px] font-semibold text-gray-800 text-center truncate w-full">{brand.name}</span>
                         </Link>
                     ))}

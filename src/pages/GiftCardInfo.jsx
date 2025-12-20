@@ -1,12 +1,12 @@
 import React, { useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
-import { Calendar, ChevronLeft, Package, Percent, ShoppingBag } from 'lucide-react';
-import { giftCardCategories, giftCards } from '../data/giftcards';
+import { useParams } from 'react-router-dom';
+import { Calendar, Package, Percent, ShoppingBag } from 'lucide-react';
+import { giftCards } from '../data/giftcards';
+import FallbackImage from '../components/FallbackImage';
 
 const GiftCardInfo = () => {
   const { id } = useParams();
   const giftCard = giftCards.find((card) => card.id === id) || giftCards[0];
-  const category = giftCardCategories.find((item) => item.id === giftCard.categoryId);
 
   const [amount, setAmount] = useState('');
 
@@ -34,21 +34,9 @@ const GiftCardInfo = () => {
 
   return (
     <div className="bg-blue-50/70 min-h-full pb-24">
-      <div className="px-4 pt-4">
-        <div className="flex items-center gap-3">
-          <Link
-            to={category ? `/gift-cards-list/${category.id}` : '/gift-cards'}
-            className="w-9 h-9 rounded-full border border-gray-100 bg-white shadow-sm flex items-center justify-center"
-          >
-            <ChevronLeft size={18} className="text-gray-700" />
-          </Link>
-          <h2 className="text-base font-semibold text-gray-800">{giftCard.name}</h2>
-        </div>
-      </div>
-
       <div className="px-4 mt-4 space-y-4">
         <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm flex items-center gap-3">
-          <img
+          <FallbackImage
             src={giftCard.logo}
             alt={giftCard.name}
             className="w-14 h-14 rounded-xl object-cover bg-gray-50"
