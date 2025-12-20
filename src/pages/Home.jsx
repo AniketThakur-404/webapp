@@ -57,7 +57,12 @@ const HeroCarousel = () => {
                         <div className="text-xs font-medium opacity-80 mb-1">Exclusive Offer</div>
                         <h3 className="text-lg font-bold leading-tight">{heroBanners[current].title}</h3>
                         <p className="text-xs mt-1 opacity-90">{heroBanners[current].subtitle}</p>
-                        <button className="mt-3 bg-white text-black text-[10px] font-bold px-3 py-1.5 rounded-full">Explore Now</button>
+                        <Link
+                            to="/brand-details"
+                            className="mt-3 inline-flex bg-white text-black text-[10px] font-bold px-3 py-1.5 rounded-full"
+                        >
+                            Explore Now
+                        </Link>
                     </div>
                     <img src={heroBanners[current].img} alt="Offer" className="w-20 h-20 rounded-lg object-cover bg-white/20" />
                 </motion.div>
@@ -110,7 +115,12 @@ const Home = () => {
             <section>
                 <div className="flex justify-between items-center mb-3 px-1">
                     <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Verify Brands</h2>
-                    <span className="text-[10px] text-blue-600 font-bold flex items-center gap-0.5">View more <ChevronRight size={12} /></span>
+                    <Link
+                        to="/brand-details"
+                        className="text-[10px] text-blue-600 font-bold flex items-center gap-0.5"
+                    >
+                        View more <ChevronRight size={12} />
+                    </Link>
                 </div>
                 <div className="grid grid-cols-3 gap-3">
                     {brands.map((brand, idx) => (
@@ -130,7 +140,9 @@ const Home = () => {
             <section>
                 <div className="flex justify-between items-center mb-3 px-1">
                     <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Verify Scan Offers</h2>
-                    <span className="text-[10px] text-blue-600 font-bold">View more</span>
+                    <Link to="/product-info" className="text-[10px] text-blue-600 font-bold">
+                        View more
+                    </Link>
                 </div>
                 <div className="flex gap-4 overflow-x-auto pb-4 no-scrollbar snap-x snap-mandatory px-1">
                     {offers.map((offer, idx) => (
