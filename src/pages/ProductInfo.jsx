@@ -1,0 +1,118 @@
+import React from 'react';
+import { Link, useParams } from 'react-router-dom';
+import { BadgeCheck, ChevronLeft, ChevronRight, Scan, Gift } from 'lucide-react';
+import { brandCatalog, productCatalog } from '../data/catalog';
+
+const ProductInfo = () => {
+  const { id } = useParams();
+  const product = productCatalog.find((item) => item.id === id) || productCatalog[0];
+  const brand = brandCatalog.find((item) => item.id === product.brandId);
+
+  const details = [
+    { label: 'Scheme', value: product.scheme },
+    { label: 'Cashback', value: product.cashback || product.reward },
+    { label: 'Pack Size', value: product.packSize },
+    { label: 'Warranty', value: product.warranty },
+  ];
+
+  const steps = [
+    {
+      title: 'Look for Verify Logo',
+      description: 'Check the Verify logo on products (online or offline).',
+      icon: <BadgeCheck size={16} className="text-blue-600" />,
+    },
+    {
+      title: 'Scratch and Scan',
+      description: 'Scratch the hidden code and scan it securely.',
+      icon: <Scan size={16} className="text-blue-600" />,
+    },
+    {
+      title: 'Get Rewards',
+      description: 'See authentication status and cashback instantly.',
+      icon: <Gift size={16} className="text-blue-600" />,
+    },
+  ];
+
+  return (
+    <div className="bg-blue-50/70 min-h-full pb-24">
+      <div className="px-4 pt-4">
+        <div className="flex items-center gap-3">
+          <Link
+            to={brand ? `/brand-details/${brand.id}` : '/brand-details'}
+            className="w-9 h-9 rounded-full border border-gray-100 bg-white shadow-sm flex items-center justify-center"
+          >
+            <ChevronLeft size={18} className="text-gray-700" />
+          </Link>
+          <h2 className="text-base font-semibold text-gray-800">Product Info</h2>
+        </div>
+      </div>
+
+      <div className="px-4 mt-4 space-y-4">
+        <div className="relative rounded-2xl overflow-hidden bg-white border border-gray-100 shadow-sm">
+          <img
+            src={product.banner || product.image}
+            alt={`${product.name} banner`}
+            className="w-full h-44 object-cover"
+          />
+          <button
+            type="button"
+            className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white/90 border border-gray-200 flex items-center justify-center shadow-md"
+          >
+            <ChevronRight size={18} className="text-gray-700" />
+          </button>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm space-y-3">
+          <div>
+            <h1 className="text-lg font-bold text-gray-900">{product.name}</h1>
+            <p className="text-xs text-gray-500">{product.variant}</p>
+          </div>
+          {brand && (
+            <Link
+              to={`/brand-details/${brand.id}`}
+              className="text-xs font-semibold text-blue-600 inline-flex items-center gap-1"
+            >
+              {brand.name}
+              <ChevronRight size={12} />
+            </Link>
+          )}
+          <p className="text-xs text-gray-600 leading-relaxed">{product.description}</p>
+
+          <div className="grid grid-cols-2 gap-3">
+            {details.map((detail) => (
+              <div
+                key={detail.label}
+                className="bg-blue-50 rounded-xl p-3 border border-blue-100"
+              >
+                <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+                  {detail.label}
+                </div>
+                <div className="text-sm font-bold text-gray-800 mt-1">{detail.value}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm space-y-3">
+          <div className="text-sm font-semibold text-gray-800">How Verify Works?</div>
+          <div className="grid grid-cols-3 gap-3">
+            {steps.map((step) => (
+              <div
+                key={step.title}
+                className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-center space-y-2"
+              >
+                <div className="w-8 h-8 rounded-full bg-white shadow-sm border border-blue-100 flex items-center justify-center mx-auto">
+                  {step.icon}
+                </div>
+                <div className="text-[10px] font-semibold text-gray-700">{step.title}</div>
+                <div className="text-[9px] text-gray-500 leading-snug">{step.description}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default ProductInfo;

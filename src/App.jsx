@@ -3,6 +3,8 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Layout from './components/Layout';
 import Home from './pages/Home';
 import GiftCards from './pages/GiftCards';
+import BrandDetails from './pages/BrandDetails';
+import ProductInfo from './pages/ProductInfo';
 
 const Wallet = () => (
   <div className="flex flex-col items-center justify-center h-full p-8 text-center text-gray-500">
@@ -22,6 +24,10 @@ function App() {
           <Route path="/" element={<Home />} />
           <Route path="/gift-cards" element={<GiftCards />} />
           <Route path="/wallet" element={<Wallet />} />
+          <Route path="/brand-details" element={<BrandDetails />} />
+          <Route path="/brand-details/:id" element={<BrandDetails />} />
+          <Route path="/product-info" element={<ProductInfo />} />
+          <Route path="/product-info/:id" element={<ProductInfo />} />
         </Routes>
       </Layout>
     </BrowserRouter>

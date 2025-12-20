@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Scan, Clock, Gift, FileText, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Link } from 'react-router-dom';
+import { brandCatalog } from '../data/catalog';
 
 // Mock Data
 const heroBanners = [
@@ -22,14 +24,7 @@ const quickActions = [
     { icon: <FileText size={24} />, label: "Product Reports", color: "bg-blue-600" },
 ];
 
-const brands = [
-    { name: "Jewell Paints", img: "https://via.placeholder.com/40/0000FF/808080?text=J" },
-    { name: "Waterflo", img: "https://via.placeholder.com/40/00FFFF/000000?text=W" },
-    { name: "Mangalam", img: "https://via.placeholder.com/40/FF0000/FFFFFF?text=M" },
-    { name: "Home Pride", img: "https://via.placeholder.com/40/FFFF00/000000?text=H" },
-    { name: "Ajanta Soya", img: "https://via.placeholder.com/40/808080/FFFFFF?text=A" },
-    { name: "HP Adhesives", img: "https://via.placeholder.com/40/000000/FFFFFF?text=HP" },
-];
+const brands = brandCatalog;
 
 const offers = [
     { color: "bg-orange-600", amount: "₹100", brand: "RL Masala" },
@@ -119,10 +114,14 @@ const Home = () => {
                 </div>
                 <div className="grid grid-cols-3 gap-3">
                     {brands.map((brand, idx) => (
-                        <div key={idx} className="bg-white p-3 rounded-lg border border-gray-100 flex flex-col items-center gap-2 shadow-sm">
-                            <img src={brand.img} className="w-10 h-10 object-contain" alt={brand.name} />
+                        <Link
+                            key={idx}
+                            to={`/brand-details/${brand.id}`}
+                            className="bg-white p-3 rounded-lg border border-gray-100 flex flex-col items-center gap-2 shadow-sm hover:shadow-md transition-shadow"
+                        >
+                            <img src={brand.logo} className="w-10 h-10 object-contain" alt={brand.name} />
                             <span className="text-[10px] font-semibold text-gray-800 text-center truncate w-full">{brand.name}</span>
-                        </div>
+                        </Link>
                     ))}
                 </div>
             </section>
