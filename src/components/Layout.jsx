@@ -1,7 +1,9 @@
 import React, { useEffect, useRef } from 'react';
 import { ChevronLeft, Gift, Home, User, Wallet } from 'lucide-react';
+import { ModeToggle } from './ModeToggle';
 import { Link, useLocation, useMatch, useNavigate } from 'react-router-dom';
 import { giftCardCategories, giftCards } from '../data/giftcards';
+import LiquidDock from './LiquidDock';
 
 const Layout = ({ children }) => {
     const mainRef = useRef(null);
@@ -41,11 +43,11 @@ const Layout = ({ children }) => {
     return (
         <div className="min-h-screen bg-gray-100 flex justify-center">
             {/* Mobile Container - limits width on desktop to look like a phone */}
-            <div className="w-full max-w-md bg-white h-[100dvh] shadow-2xl relative flex flex-col overflow-hidden">
+            <div className="w-full max-w-md bg-white dark:bg-zinc-950 h-[100dvh] shadow-2xl relative flex flex-col overflow-hidden transition-colors duration-300">
 
                 {/* TOP HEADER */}
                 <header
-                    className={`bg-white px-4 py-[16px] sticky top-0 z-50 shadow-sm flex items-center ${isHome ? 'justify-between' : 'justify-start'
+                    className={`bg-white dark:bg-zinc-950/80 backdrop-blur-md px-4 py-[16px] sticky top-0 z-50 shadow-sm dark:shadow-zinc-900 border-b border-transparent dark:border-zinc-800 flex items-center transition-colors duration-300 ${isHome ? 'justify-between' : 'justify-start'
                         }`}
                 >
                     {isHome ? (
@@ -59,13 +61,14 @@ const Layout = ({ children }) => {
                             </div>
 
                             <div className="flex items-center gap-3">
+                                <ModeToggle />
                                 {/* Wallet Balance Pill */}
-                                <div className="bg-blue-600 text-white px-3 py-1 rounded-full flex items-center gap-1 text-sm font-medium shadow-md">
+                                <div className="bg-blue-600 dark:bg-blue-700 text-white px-3 py-1 rounded-full flex items-center gap-1 text-sm font-medium shadow-md">
                                     <Wallet size={14} />
                                     <span>₹ 0.00</span>
                                 </div>
                                 {/* Profile Icon */}
-                                <div className="w-8 h-8 bg-yellow-400 rounded-full flex items-center justify-center border border-gray-200">
+                                <div className="w-8 h-8 bg-yellow-400 rounded-full flex items-center justify-center border border-gray-200 dark:border-gray-700">
                                     <User size={16} className="text-gray-700" />
                                 </div>
                             </div>
@@ -75,50 +78,37 @@ const Layout = ({ children }) => {
                             <button
                                 type="button"
                                 onClick={() => navigate(-1)}
-                                className="w-9 h-9 rounded-full border border-gray-100 bg-white shadow-sm flex items-center justify-center"
+                                className="w-9 h-9 rounded-full border border-gray-100 bg-white shadow-sm flex items-center justify-center dark:bg-zinc-800 dark:border-zinc-700 dark:text-white"
                                 aria-label="Go back"
                             >
                                 <ChevronLeft size={18} className="text-gray-700" />
                             </button>
-                            <h1 className="text-base font-semibold text-gray-800">{headerTitle}</h1>
+                            <h1 className="text-base font-semibold text-gray-800 dark:text-gray-100">{headerTitle}</h1>
                         </div>
                     )}
                 </header>
 
                 {/* MAIN CONTENT AREA (Scrollable) */}
-                {/* MAIN CONTENT AREA (Scrollable) */}
                 <main
                     ref={mainRef}
-                    className="flex-1 overflow-y-auto pb-20 bg-blue-50 no-scrollbar touch-pan-y"
+                    className="flex-1 overflow-y-auto pb-20 bg-blue-50 dark:bg-zinc-950 transition-colors duration-300 no-scrollbar touch-pan-y"
                     style={{ WebkitOverflowScrolling: 'touch' }}
                 >
                     {children}
                 </main>
 
                 {/* BOTTOM NAVIGATION */}
-                <nav className="fixed bottom-0 w-full max-w-md bg-white border-t border-gray-200 grid grid-cols-3 py-3 pb-4 z-50 safe-area-bottom px-2">
-                    <NavItem to="/" icon={<Home size={20} />} label="Incentify Online" />
-                    <NavItem to="/gift-cards" icon={<Gift size={20} />} label="Gift Card" />
-                    <NavItem to="/wallet" icon={<Wallet size={20} />} label="vCash" />
-                </nav>
+                <LiquidDock
+                    items={[
+                        { path: '/', icon: <Home size={20} />, label: 'Home' },
+                        { path: '/gift-cards', icon: <Gift size={20} />, label: 'Gift Card' },
+                        { path: '/wallet', icon: <Wallet size={20} />, label: 'vCash' },
+                    ]}
+                />
             </div>
         </div>
     );
 };
 
-// Helper Component for Nav Items
-const NavItem = ({ to, icon, label }) => {
-    const location = useLocation();
-    const isActive = location.pathname === to;
-    return (
-        <Link
-            to={to}
-            className={`flex flex-col items-center gap-1 text-center ${isActive ? 'text-blue-600' : 'text-gray-400'}`}
-        >
-            {icon}
-            <span className="text-[10px] font-medium leading-tight">{label}</span>
-        </Link>
-    );
-};
 
 export default Layout;

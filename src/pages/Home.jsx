@@ -5,6 +5,8 @@ import { Link } from 'react-router-dom';
 import { brandCatalog } from '../data/catalog';
 import FallbackImage from '../components/FallbackImage';
 import VideoSpotlight from '../components/VideoSpotlight';
+import { LiquidButton } from '../components/ui/LiquidGlassButton';
+import HowItWorks from '../components/HowItWorks';
 
 // Mock Data
 const heroBanners = [
@@ -58,12 +60,12 @@ const HeroCarousel = () => {
                     <div className="flex-1 pr-4">
                         <div className="text-xs font-medium opacity-80 mb-1">Exclusive Offer</div>
                         <h3 className="text-lg font-bold leading-tight">{heroBanners[current].title}</h3>
-                        <p className="text-xs mt-1 opacity-90">{heroBanners[current].subtitle}</p>
-                        <Link
-                            to="/brand-details"
-                            className="mt-3 inline-flex bg-white text-black text-[10px] font-bold px-3 py-1.5 rounded-full"
-                        >
-                            Explore Now
+
+                        <p className="text-xs mt-1 opacity-90 mb-3">{heroBanners[current].subtitle}</p>
+                        <Link to="/brand-details">
+                            <LiquidButton size="sm" className="text-[10px] px-4 py-1 h-8">
+                                Explore
+                            </LiquidButton>
                         </Link>
                     </div>
                     <FallbackImage
@@ -86,7 +88,7 @@ const HeroCarousel = () => {
 
 const Home = () => {
     return (
-        <div className="p-4 pb-20 space-y-6 bg-blue-50/50 min-h-full">
+        <div className="p-4 pb-20 space-y-6 bg-blue-50/50 dark:bg-zinc-950 min-h-full transition-colors duration-300">
 
             {/* 1. Hero Carousel with Auto-Scroll */}
             <section>
@@ -104,14 +106,14 @@ const Home = () => {
             </section>
 
             {/* 3. Quick Actions */}
-            <section className="bg-white p-4 rounded-xl shadow-sm border border-blue-50">
+            <section className="bg-white dark:bg-zinc-900 p-4 rounded-xl shadow-sm dark:shadow-zinc-900 border border-blue-50 dark:border-zinc-800 transition-colors duration-300">
                 <div className="grid grid-cols-4 gap-2">
                     {quickActions.map((action, idx) => (
                         <div key={idx} className="flex flex-col items-center gap-2 text-center">
                             <div className={`${action.color} w-12 h-12 rounded-xl flex items-center justify-center text-white shadow-md shadow-blue-200`}>
                                 {action.icon}
                             </div>
-                            <span className="text-[10px] font-bold text-gray-700 leading-tight">{action.label}</span>
+                            <span className="text-[10px] font-bold text-gray-700 dark:text-gray-300 leading-tight">{action.label}</span>
                         </div>
                     ))}
                 </div>
@@ -138,14 +140,14 @@ const Home = () => {
                         <Link
                             key={idx}
                             to={`/brand-details/${brand.id}`}
-                            className="bg-white p-3 rounded-lg border border-gray-100 flex flex-col items-center gap-2 shadow-sm hover:shadow-md transition-shadow"
+                            className="bg-white dark:bg-zinc-900 p-3 rounded-lg border border-gray-100 dark:border-zinc-800 flex flex-col items-center gap-2 shadow-sm hover:shadow-md transition-all duration-300"
                         >
                             <FallbackImage
                                 src={brand.logo}
                                 alt={brand.name}
                                 className="w-10 h-10 object-contain"
                             />
-                            <span className="text-[10px] font-semibold text-gray-800 text-center truncate w-full">{brand.name}</span>
+                            <span className="text-[10px] font-semibold text-gray-800 dark:text-gray-200 text-center truncate w-full">{brand.name}</span>
                         </Link>
                     ))}
                 </div>
@@ -177,7 +179,7 @@ const Home = () => {
             </section>
 
             {/* 6. Warranty Section */}
-            <section className="bg-white p-4 rounded-xl space-y-4 shadow-sm">
+            <section className="bg-white dark:bg-zinc-900 p-4 rounded-xl space-y-4 shadow-sm dark:shadow-zinc-900 transition-colors duration-300">
                 <div className="flex justify-between items-center">
                     <h2 className="text-xs font-bold text-gray-500 uppercase">Warranty</h2>
                     <span className="text-[10px] text-blue-600 font-bold">View more</span>
@@ -205,6 +207,9 @@ const Home = () => {
                     <div className="absolute right-0 bottom-0 h-full w-1/3 bg-black/20 transform skew-x-12" />
                 </div>
             </section>
+
+            {/* 7. How It Works */}
+            <HowItWorks />
 
         </div>
     );

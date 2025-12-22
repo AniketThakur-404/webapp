@@ -35,9 +35,9 @@ const ProductInfo = () => {
   ];
 
   return (
-    <div className="bg-blue-50/70 min-h-full pb-24">
+    <div className="bg-blue-50/70 dark:bg-zinc-950 min-h-full pb-24 transition-colors duration-300">
       <div className="px-4 mt-4 space-y-4">
-        <div className="relative rounded-2xl overflow-hidden bg-white border border-gray-100 shadow-sm">
+        <div className="relative rounded-2xl overflow-hidden bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 shadow-sm transition-colors duration-300">
           <FallbackImage
             src={product.banner || product.image}
             alt={`${product.name} banner`}
@@ -45,56 +45,56 @@ const ProductInfo = () => {
           />
           <button
             type="button"
-            className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white/90 border border-gray-200 flex items-center justify-center shadow-md"
+            className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white/90 dark:bg-zinc-800/90 border border-gray-200 dark:border-zinc-700 flex items-center justify-center shadow-md"
           >
-            <ChevronRight size={18} className="text-gray-700" />
+            <ChevronRight size={18} className="text-gray-700 dark:text-gray-300" />
           </button>
         </div>
 
-        <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm space-y-3">
+        <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-100 dark:border-zinc-800 p-4 shadow-sm space-y-3 transition-colors duration-300">
           <div>
-            <h1 className="text-lg font-bold text-gray-900">{product.name}</h1>
-            <p className="text-xs text-gray-500">{product.variant}</p>
+            <h1 className="text-lg font-bold text-gray-900 dark:text-gray-100">{product.name}</h1>
+            <p className="text-xs text-gray-500 dark:text-gray-400">{product.variant}</p>
           </div>
           {brand && (
             <Link
               to={`/brand-details/${brand.id}`}
-              className="text-xs font-semibold text-blue-600 inline-flex items-center gap-1"
+              className="text-xs font-semibold text-blue-600 dark:text-blue-400 inline-flex items-center gap-1"
             >
               {brand.name}
               <ChevronRight size={12} />
             </Link>
           )}
-          <p className="text-xs text-gray-600 leading-relaxed">{product.description}</p>
+          <p className="text-xs text-gray-600 dark:text-gray-400 leading-relaxed">{product.description}</p>
 
           <div className="grid grid-cols-2 gap-3">
             {details.map((detail) => (
               <div
                 key={detail.label}
-                className="bg-blue-50 rounded-xl p-3 border border-blue-100"
+                className="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-3 border border-blue-100 dark:border-blue-900/30"
               >
-                <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+                <div className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
                   {detail.label}
                 </div>
-                <div className="text-sm font-bold text-gray-800 mt-1">{detail.value}</div>
+                <div className="text-sm font-bold text-gray-800 dark:text-gray-200 mt-1">{detail.value}</div>
               </div>
             ))}
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm space-y-3">
-          <div className="text-sm font-semibold text-gray-800">How Incentify Online Works?</div>
+        <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-100 dark:border-zinc-800 p-4 shadow-sm space-y-3 transition-colors duration-300">
+          <div className="text-sm font-semibold text-gray-800 dark:text-gray-200">How Incentify Online Works?</div>
           <div className="grid grid-cols-3 gap-3">
             {steps.map((step) => (
               <div
                 key={step.title}
-                className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-center space-y-2"
+                className="bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-900/30 rounded-xl p-3 text-center space-y-2"
               >
-                <div className="w-8 h-8 rounded-full bg-white shadow-sm border border-blue-100 flex items-center justify-center mx-auto">
+                <div className="w-8 h-8 rounded-full bg-white dark:bg-zinc-800 shadow-sm border border-blue-100 dark:border-zinc-700 flex items-center justify-center mx-auto">
                   {step.icon}
                 </div>
-                <div className="text-[10px] font-semibold text-gray-700">{step.title}</div>
-                <div className="text-[9px] text-gray-500 leading-snug">{step.description}</div>
+                <div className="text-[10px] font-semibold text-gray-700 dark:text-gray-300">{step.title}</div>
+                <div className="text-[9px] text-gray-500 dark:text-gray-400 leading-snug">{step.description}</div>
               </div>
             ))}
           </div>

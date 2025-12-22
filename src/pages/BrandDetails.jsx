@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { BadgeCheck, ChevronRight, Globe, Mail, MessageCircle, Search } from 'lucide-react';
 import { brandCatalog, productCatalog } from '../data/catalog';
 import FallbackImage from '../components/FallbackImage';
+import HowItWorks from '../components/HowItWorks';
 
 const titleFromSlug = (slug) => {
   if (!slug) return 'Brand';
@@ -51,16 +52,16 @@ const BrandDetails = () => {
     ? brand
     : id
       ? {
-          ...brandCatalog[0],
-          id,
-          name: titleFromSlug(id),
-        }
+        ...brandCatalog[0],
+        id,
+        name: titleFromSlug(id),
+      }
       : brandCatalog[0];
 
   return (
-    <div className="bg-blue-50/70 min-h-full pb-24">
+    <div className="bg-blue-50/70 dark:bg-zinc-950 min-h-full pb-24 transition-colors duration-300">
       <div className="px-4 mt-4 space-y-4">
-        <div className="rounded-2xl overflow-hidden bg-white border border-gray-100 shadow-sm">
+        <div className="rounded-2xl overflow-hidden bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 shadow-sm transition-colors duration-300">
           <FallbackImage
             src={displayBrand.banner}
             alt={`${displayBrand.name} banner`}
@@ -69,7 +70,7 @@ const BrandDetails = () => {
           <div className="p-4 space-y-3">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h1 className="text-lg font-bold text-gray-900">{displayBrand.name}</h1>
+                <h1 className="text-lg font-bold text-gray-900 dark:text-gray-100">{displayBrand.name}</h1>
                 <div className="flex items-center gap-2 text-[11px] text-green-700 font-semibold mt-1">
                   <BadgeCheck size={14} className="text-green-600" />
                   Verified brand partner
@@ -103,13 +104,13 @@ const BrandDetails = () => {
               </a>
             </div>
 
-            <p className="text-xs text-gray-600 leading-relaxed">{displayBrand.about}</p>
+            <p className="text-xs text-gray-600 dark:text-gray-400 leading-relaxed">{displayBrand.about}</p>
 
             <div className="flex flex-wrap gap-2">
               {displayBrand.tags.map((tag) => (
                 <span
                   key={tag}
-                  className="text-[10px] font-semibold text-blue-700 bg-blue-50 px-2 py-1 rounded-full border border-blue-100"
+                  className="text-[10px] font-semibold text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2 py-1 rounded-full border border-blue-100 dark:border-blue-900/30"
                 >
                   {tag}
                 </span>
@@ -128,7 +129,7 @@ const BrandDetails = () => {
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search Product"
-            className="w-full bg-white border border-gray-200 rounded-full py-3 pl-10 pr-12 text-sm text-gray-700 outline-none focus:ring-2 focus:ring-blue-500/20"
+            className="w-full bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-full py-3 pl-10 pr-12 text-sm text-gray-700 dark:text-gray-200 outline-none focus:ring-2 focus:ring-blue-500/20"
           />
           <button
             type="button"
@@ -144,11 +145,10 @@ const BrandDetails = () => {
               key={category}
               type="button"
               onClick={() => setActiveCategory(category)}
-              className={`px-4 py-2 rounded-full text-[11px] font-semibold border transition-colors ${
-                activeCategory === category
-                  ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                  : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
-              }`}
+              className={`px-4 py-2 rounded-full text-[11px] font-semibold border transition-colors ${activeCategory === category
+                ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                : 'bg-white dark:bg-zinc-900 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-zinc-800 hover:bg-gray-50 dark:hover:bg-zinc-800'
+                }`}
             >
               {category}
             </button>
@@ -157,7 +157,7 @@ const BrandDetails = () => {
 
         <div className="space-y-3">
           {filteredProducts.length === 0 ? (
-            <div className="bg-white border border-dashed border-gray-200 rounded-2xl p-6 text-center text-sm text-gray-500">
+            <div className="bg-white dark:bg-zinc-900 border border-dashed border-gray-200 dark:border-zinc-800 rounded-2xl p-6 text-center text-sm text-gray-500 dark:text-gray-400">
               No products matched your search yet.
             </div>
           ) : (
@@ -165,17 +165,17 @@ const BrandDetails = () => {
               <Link
                 key={product.id}
                 to={`/product-info/${product.id}`}
-                className="bg-white p-3 rounded-xl border border-gray-100 flex items-center gap-3 shadow-sm hover:shadow-md transition-shadow"
+                className="bg-white dark:bg-zinc-900 p-3 rounded-xl border border-gray-100 dark:border-zinc-800 flex items-center gap-3 shadow-sm hover:shadow-md transition-shadow"
               >
                 <FallbackImage
                   src={product.image}
                   alt={product.name}
-                  className="w-12 h-12 object-contain rounded-lg bg-blue-50"
+                  className="w-12 h-12 object-contain rounded-lg bg-blue-50 dark:bg-zinc-800"
                 />
                 <div className="flex-1">
-                  <div className="text-sm font-semibold text-gray-800">{product.name}</div>
-                  <div className="text-[11px] text-gray-500">{product.variant}</div>
-                  <div className="text-[11px] text-green-600 font-semibold mt-1">
+                  <div className="text-sm font-semibold text-gray-800 dark:text-gray-200">{product.name}</div>
+                  <div className="text-[11px] text-gray-500 dark:text-gray-400">{product.variant}</div>
+                  <div className="text-[11px] text-green-600 dark:text-green-500 font-semibold mt-1">
                     {product.reward} cashback
                   </div>
                 </div>
@@ -184,6 +184,8 @@ const BrandDetails = () => {
             ))
           )}
         </div>
+
+        <HowItWorks />
       </div>
     </div>
   );

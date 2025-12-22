@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { ChevronRight, Percent, Search } from 'lucide-react';
 import { giftCards } from '../data/giftcards';
 import FallbackImage from '../components/FallbackImage';
+import HowItWorks from '../components/HowItWorks';
 
 const GiftCardsList = () => {
   const { categoryId } = useParams();
@@ -18,7 +19,7 @@ const GiftCardsList = () => {
   }, [categoryId, query]);
 
   return (
-    <div className="bg-blue-50/70 min-h-full pb-24">
+    <div className="bg-blue-50/70 dark:bg-zinc-950 min-h-full pb-24 transition-colors duration-300">
       <div className="px-4 mt-4 space-y-4">
         <div className="relative">
           <Search
@@ -30,7 +31,7 @@ const GiftCardsList = () => {
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search Giftcard"
-            className="w-full bg-white border border-gray-200 rounded-full py-3 pl-10 pr-12 text-sm text-gray-700 outline-none focus:ring-2 focus:ring-blue-500/20"
+            className="w-full bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-full py-3 pl-10 pr-12 text-sm text-gray-700 dark:text-gray-200 outline-none focus:ring-2 focus:ring-blue-500/20"
           />
           <button
             type="button"
@@ -42,7 +43,7 @@ const GiftCardsList = () => {
 
         <div className="space-y-3">
           {filteredCards.length === 0 ? (
-            <div className="bg-white border border-dashed border-gray-200 rounded-2xl p-6 text-center text-sm text-gray-500">
+            <div className="bg-white dark:bg-zinc-900 border border-dashed border-gray-200 dark:border-zinc-800 rounded-2xl p-6 text-center text-sm text-gray-500 dark:text-gray-400">
               No gift cards match your search.
             </div>
           ) : (
@@ -50,16 +51,16 @@ const GiftCardsList = () => {
               <Link
                 key={card.id}
                 to={`/gift-card-info/${card.id}`}
-                className="bg-white rounded-xl border border-gray-100 p-3 flex items-center gap-3 shadow-sm hover:shadow-md transition-shadow"
+                className="bg-white dark:bg-zinc-900 rounded-xl border border-gray-100 dark:border-zinc-800 p-3 flex items-center gap-3 shadow-sm hover:shadow-md transition-shadow"
               >
                 <FallbackImage
                   src={card.logo}
                   alt={card.name}
-                  className="w-12 h-12 rounded-lg object-cover bg-gray-50"
+                  className="w-12 h-12 rounded-lg object-cover bg-gray-50 dark:bg-zinc-800"
                 />
                 <div className="flex-1">
-                  <div className="text-sm font-semibold text-gray-800">{card.name}</div>
-                  <div className="text-green-600 text-xs font-semibold mt-1 flex items-center gap-2">
+                  <div className="text-sm font-semibold text-gray-800 dark:text-gray-200">{card.name}</div>
+                  <div className="text-green-600 dark:text-green-500 text-xs font-semibold mt-1 flex items-center gap-2">
                     <span className="w-5 h-5 rounded-full bg-green-100 flex items-center justify-center">
                       <Percent size={12} className="text-green-600" />
                     </span>
@@ -71,6 +72,8 @@ const GiftCardsList = () => {
             ))
           )}
         </div>
+
+        <HowItWorks />
       </div>
     </div>
   );
