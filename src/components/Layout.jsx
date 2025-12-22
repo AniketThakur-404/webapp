@@ -41,13 +41,12 @@ const Layout = ({ children }) => {
     return (
         <div className="min-h-screen bg-gray-100 flex justify-center">
             {/* Mobile Container - limits width on desktop to look like a phone */}
-            <div className="w-full max-w-md bg-white min-h-screen shadow-2xl relative flex flex-col">
+            <div className="w-full max-w-md bg-white h-[100dvh] shadow-2xl relative flex flex-col overflow-hidden">
 
                 {/* TOP HEADER */}
                 <header
-                    className={`bg-white px-4 py-[16px] sticky top-0 z-50 shadow-sm flex items-center ${
-                        isHome ? 'justify-between' : 'justify-start'
-                    }`}
+                    className={`bg-white px-4 py-[16px] sticky top-0 z-50 shadow-sm flex items-center ${isHome ? 'justify-between' : 'justify-start'
+                        }`}
                 >
                     {isHome ? (
                         <>
@@ -87,7 +86,12 @@ const Layout = ({ children }) => {
                 </header>
 
                 {/* MAIN CONTENT AREA (Scrollable) */}
-                <main ref={mainRef} className="flex-1 overflow-y-auto pb-20 bg-blue-50">
+                {/* MAIN CONTENT AREA (Scrollable) */}
+                <main
+                    ref={mainRef}
+                    className="flex-1 overflow-y-auto pb-20 bg-blue-50 no-scrollbar touch-pan-y"
+                    style={{ WebkitOverflowScrolling: 'touch' }}
+                >
                     {children}
                 </main>
 

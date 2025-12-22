@@ -20,3 +20,7 @@ body {
     scrollbar-width: none;
   }
 }
+
+html, body {
+  overscroll-behavior-y: none;
+}

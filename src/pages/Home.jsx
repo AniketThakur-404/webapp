@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { brandCatalog } from '../data/catalog';
 import FallbackImage from '../components/FallbackImage';
+import VideoSpotlight from '../components/VideoSpotlight';
 
 // Mock Data
 const heroBanners = [
@@ -115,6 +116,11 @@ const Home = () => {
                     ))}
                 </div>
             </section>
+
+
+
+            {/* 3.5 Video Spotlight */}
+            <VideoSpotlight />
 
             {/* 4. Incentify Brands Grid */}
             <section>
