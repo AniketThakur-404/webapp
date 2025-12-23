@@ -1,12 +1,12 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useLayoutEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { motion, useMotionValue, useSpring, useTransform } from 'framer-motion';
 
-const DockIcon = ({ children, to, label, isActive, mouseX }) => {
-    const ref = useRef(null);
+const DockIcon = React.forwardRef(({ children, to, label, isActive, mouseX }, forwardedRef) => {
+    const localRef = useRef(null);
 
     const distance = useTransform(mouseX, (val) => {
-        const bounds = ref.current?.getBoundingClientRect() ?? { x: 0, width: 0 };
+        const bounds = localRef.current?.getBoundingClientRect() ?? { x: 0, width: 0 };
         return val - bounds.x - bounds.width / 2;
     });
 
@@ -18,7 +18,18 @@ const DockIcon = ({ children, to, label, isActive, mouseX }) => {
     });
 
     return (
-        <motion.div ref={ref} style={{ width }} className="h-full flex items-center justify-center">
+        <motion.div
+            ref={(node) => {
+                localRef.current = node;
+                if (typeof forwardedRef === 'function') {
+                    forwardedRef(node);
+                } else if (forwardedRef) {
+                    forwardedRef.current = node;
+                }
+            }}
+            style={{ width }}
+            className="h-full flex items-center justify-center"
+        >
             <Link
                 to={to}
                 className={`w-full h-full flex flex-col items-center justify-center gap-1 transition-colors duration-300 relative z-10 ${isActive
@@ -31,7 +42,9 @@ const DockIcon = ({ children, to, label, isActive, mouseX }) => {
             </Link>
         </motion.div>
     );
-};
+});
+
+DockIcon.displayName = 'DockIcon';
 
 const LiquidDock = ({ items }) => {
     const location = useLocation();
@@ -44,7 +57,7 @@ const LiquidDock = ({ items }) => {
     const activeIndex = items.findIndex(item => location.pathname === item.path);
     const targetIndex = hoveredIndex !== null ? hoveredIndex : activeIndex;
 
-    useEffect(() => {
+    useLayoutEffect(() => {
         const updatePillPosition = () => {
             if (targetIndex >= 0 && itemWrapperRefs.current[targetIndex] && innerContainerRef.current) {
                 const innerRect = innerContainerRef.current.getBoundingClientRect();
@@ -58,9 +71,20 @@ const LiquidDock = ({ items }) => {
         };
 
         updatePillPosition();
-        const timer = setTimeout(updatePillPosition, 50);
 
-        return () => clearTimeout(timer);
+        const innerEl = innerContainerRef.current;
+        const targetEl = itemWrapperRefs.current[targetIndex];
+        if (!innerEl || !targetEl) return undefined;
+
+        const resizeObserver = new ResizeObserver(updatePillPosition);
+        resizeObserver.observe(innerEl);
+        resizeObserver.observe(targetEl);
+        window.addEventListener('resize', updatePillPosition);
+
+        return () => {
+            resizeObserver.disconnect();
+            window.removeEventListener('resize', updatePillPosition);
+        };
     }, [targetIndex]);
 
     return (
@@ -99,12 +123,12 @@ const LiquidDock = ({ items }) => {
                         {items.map((item, index) => (
                             <div
                                 key={item.path}
-                                ref={(el) => (itemWrapperRefs.current[index] = el)}
-                                className="flex-1 flex justify-center"
+                                className="flex-1 flex justify-center min-w-0"
                                 onMouseEnter={() => setHoveredIndex(index)}
                                 onMouseLeave={() => setHoveredIndex(null)}
                             >
                                 <DockIcon
+                                    ref={(el) => (itemWrapperRefs.current[index] = el)}
                                     to={item.path}
                                     label={item.label}
                                     isActive={location.pathname === item.path}
