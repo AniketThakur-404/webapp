@@ -95,17 +95,7 @@ const Home = () => {
                 <HeroCarousel />
             </section>
 
-            {/* 2. Stats Grid */}
-            <section className="grid grid-cols-3 gap-3">
-                {stats.map((stat, idx) => (
-                    <div key={idx} className={`${stat.bg} p-3 rounded-xl flex flex-col items-center justify-center text-center h-24`}>
-                        <span className={`text-xl font-bold ${stat.text}`}>{stat.value}</span>
-                        <span className={`text-[10px] font-semibold ${stat.text} leading-tight mt-1`}>{stat.label.split(' ').map((w, i) => <div key={i}>{w}</div>)}</span>
-                    </div>
-                ))}
-            </section>
-
-            {/* 3. Quick Actions */}
+            {/* 2. Quick Actions */}
             <section className="bg-white dark:bg-zinc-900 p-4 rounded-xl shadow-sm dark:shadow-zinc-900 border border-blue-50 dark:border-zinc-800 transition-colors duration-300">
                 <div className="grid grid-cols-4 gap-2">
                     {quickActions.map((action, idx) => (
@@ -119,12 +109,7 @@ const Home = () => {
                 </div>
             </section>
 
-
-
-            {/* 3.5 Video Spotlight */}
-            <VideoSpotlight />
-
-            {/* 4. Incentify Brands Grid */}
+            {/* 3. Incentify Brands Grid */}
             <section>
                 <div className="flex justify-between items-center mb-3 px-1">
                     <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Incentify Online Brands</h2>
@@ -151,6 +136,19 @@ const Home = () => {
                         </Link>
                     ))}
                 </div>
+            </section>
+
+            {/* 3.5 Video Spotlight */}
+            <VideoSpotlight />
+
+            {/* 4. Stats Grid */}
+            <section className="grid grid-cols-3 gap-3">
+                {stats.map((stat, idx) => (
+                    <div key={idx} className={`${stat.bg} p-3 rounded-xl flex flex-col items-center justify-center text-center h-24`}>
+                        <span className={`text-xl font-bold ${stat.text}`}>{stat.value}</span>
+                        <span className={`text-[10px] font-semibold ${stat.text} leading-tight mt-1`}>{stat.label.split(' ').map((w, i) => <div key={i}>{w}</div>)}</span>
+                    </div>
+                ))}
             </section>
 
             {/* 5. Incentify Scan Offers (Horizontal Scroll) */}

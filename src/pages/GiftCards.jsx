@@ -88,7 +88,7 @@ const GiftCards = () => {
             </div>
 
             {/* How It Works */}
-            <div className="px-4">
+            <div className="px-4 mt-4 pb-8">
                 <HowItWorks />
             </div>
 

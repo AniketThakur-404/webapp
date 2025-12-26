@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { ChevronLeft, Gift, Home, User, Wallet } from 'lucide-react';
+import { ChevronLeft, Gift, Home, Store, User, Wallet } from 'lucide-react';
 import { ModeToggle } from './ModeToggle';
 import { Link, useLocation, useMatch, useNavigate } from 'react-router-dom';
 import { giftCardCategories, giftCards } from '../data/giftcards';
@@ -29,6 +29,7 @@ const Layout = ({ children }) => {
         if (location.pathname.startsWith('/gift-card-info')) return 'Gift Card Info';
         if (location.pathname.startsWith('/gift-cards')) return 'Gift Card';
         if (location.pathname.startsWith('/wallet')) return 'vCash';
+        if (location.pathname.startsWith('/vendor-dashboard')) return 'Vendor Dashboard';
         if (location.pathname.startsWith('/brand-details')) return 'Brand Details';
         if (location.pathname.startsWith('/product-info')) return 'Product Info';
         return 'Incentify Online';
@@ -74,16 +75,19 @@ const Layout = ({ children }) => {
                             </div>
                         </>
                     ) : (
-                        <div className="flex items-center gap-3">
-                            <button
-                                type="button"
-                                onClick={() => navigate(-1)}
-                                className="w-9 h-9 rounded-full border border-gray-100 bg-white shadow-sm flex items-center justify-center dark:bg-zinc-800 dark:border-zinc-700 dark:text-white"
-                                aria-label="Go back"
-                            >
-                                <ChevronLeft size={18} className="text-gray-700" />
-                            </button>
-                            <h1 className="text-base font-semibold text-gray-800 dark:text-gray-100">{headerTitle}</h1>
+                        <div className="flex items-center justify-between w-full">
+                            <div className="flex items-center gap-3">
+                                <button
+                                    type="button"
+                                    onClick={() => navigate(-1)}
+                                    className="w-9 h-9 rounded-full border border-gray-100 bg-white shadow-sm flex items-center justify-center dark:bg-zinc-800 dark:border-zinc-700 dark:text-white"
+                                    aria-label="Go back"
+                                >
+                                    <ChevronLeft size={18} className="text-gray-700" />
+                                </button>
+                                <h1 className="text-base font-semibold text-gray-800 dark:text-gray-100">{headerTitle}</h1>
+                            </div>
+                            <ModeToggle />
                         </div>
                     )}
                 </header>
@@ -98,13 +102,16 @@ const Layout = ({ children }) => {
                 </main>
 
                 {/* BOTTOM NAVIGATION */}
-                <LiquidDock
-                    items={[
-                        { path: '/', icon: <Home size={20} />, label: 'Home' },
-                        { path: '/gift-cards', icon: <Gift size={20} />, label: 'Gift Card' },
-                        { path: '/wallet', icon: <Wallet size={20} />, label: 'vCash' },
-                    ]}
-                />
+                {!location.pathname.startsWith('/vendor-dashboard') && (
+                    <LiquidDock
+                        items={[
+                            { path: '/', icon: <Home size={20} />, label: 'Home' },
+                            { path: '/gift-cards', icon: <Gift size={20} />, label: 'Gift Card' },
+                            { path: '/wallet', icon: <Wallet size={20} />, label: 'vCash' },
+                            { path: '/vendor-dashboard', icon: <Store size={20} />, label: 'Vendor' },
+                        ]}
+                    />
+                )}
             </div>
         </div>
     );

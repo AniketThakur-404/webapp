@@ -21,19 +21,23 @@ const HowItWorks = () => {
     ];
 
     return (
-        <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-100 dark:border-zinc-800 p-4 shadow-sm space-y-3 transition-colors duration-300">
+        <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-100 dark:border-zinc-800 p-5 shadow-sm space-y-4 transition-colors duration-300">
             <div className="text-sm font-semibold text-gray-800 dark:text-gray-200">How Incentify Online Works?</div>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 {steps.map((step) => (
                     <div
                         key={step.title}
-                        className="bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-900/30 rounded-xl p-3 text-center space-y-2"
+                        className="bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-900/30 rounded-xl p-4 text-center space-y-3"
                     >
-                        <div className="w-8 h-8 rounded-full bg-white dark:bg-zinc-800 shadow-sm border border-blue-100 dark:border-zinc-700 flex items-center justify-center mx-auto">
+                        <div className="w-9 h-9 rounded-full bg-white dark:bg-zinc-800 shadow-sm border border-blue-100 dark:border-zinc-700 flex items-center justify-center mx-auto">
                             {step.icon}
                         </div>
-                        <div className="text-[10px] font-semibold text-gray-700 dark:text-gray-300">{step.title}</div>
-                        <div className="text-[9px] text-gray-500 dark:text-gray-400 leading-snug">{step.description}</div>
+                        <div className="text-[11px] font-semibold text-gray-700 dark:text-gray-300">
+                            {step.title}
+                        </div>
+                        <div className="text-[10px] text-gray-500 dark:text-gray-400 leading-snug">
+                            {step.description}
+                        </div>
                     </div>
                 ))}
             </div>

@@ -8,17 +8,9 @@ import GiftCardInfo from './pages/GiftCardInfo';
 import BrandDetails from './pages/BrandDetails';
 import ProductInfo from './pages/ProductInfo';
 import LiquidGlassDemo from './pages/LiquidGlassDemo';
+import Wallet from './pages/Wallet';
+import VendorDashboard from './pages/VendorDashboard';
 import { ThemeProvider } from './components/ThemeProvider';
-
-const Wallet = () => (
-  <div className="flex flex-col items-center justify-center h-full p-8 text-center text-gray-500">
-    <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
-      📦
-    </div>
-    <h2 className="text-lg font-bold text-gray-800">Wallet Coming Soon</h2>
-    <p className="text-sm mt-2">Your vCash balance and transactions will appear here.</p>
-  </div>
-);
 
 function App() {
   return (
@@ -33,6 +25,7 @@ function App() {
             <Route path="/gift-card-info" element={<GiftCardInfo />} />
             <Route path="/gift-card-info/:id" element={<GiftCardInfo />} />
             <Route path="/wallet" element={<Wallet />} />
+            <Route path="/vendor-dashboard" element={<VendorDashboard />} />
             <Route path="/brand-details" element={<BrandDetails />} />
             <Route path="/brand-details/:id" element={<BrandDetails />} />
             <Route path="/product-info" element={<ProductInfo />} />

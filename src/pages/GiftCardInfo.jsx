@@ -104,7 +104,7 @@ const GiftCardInfo = () => {
           </div>
         </details>
 
-        <details className="bg-blue-100/70 dark:bg-blue-900/20 rounded-2xl border border-blue-100 dark:border-blue-900/30 shadow-sm">
+        <details className="bg-blue-100/70 dark:bg-blue-900/20 rounded-2xl border border-blue-100 dark:border-blue-900/30 shadow-sm mb-4">
           <summary className="cursor-pointer list-none px-4 py-3 text-xs font-semibold text-gray-700 dark:text-gray-200">
             Terms and Conditions
           </summary>
