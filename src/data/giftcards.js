@@ -3,7 +3,7 @@ import { Coffee, Gift, ShoppingBag, Smartphone, Truck, Watch } from 'lucide-reac
 export const giftCardCategories = [
   { id: 'shopping', name: 'Shopping', icon: ShoppingBag, iconColor: 'text-yellow-600', bg: 'bg-yellow-100' },
   { id: 'grocery', name: 'Grocery', icon: Coffee, iconColor: 'text-green-600', bg: 'bg-green-100' },
-  { id: 'travel', name: 'Travel', icon: Truck, iconColor: 'text-blue-600', bg: 'bg-blue-100' },
+  { id: 'travel', name: 'Travel', icon: Truck, iconColor: 'text-primary-strong', bg: 'bg-primary/15' },
   { id: 'electronics', name: 'Electronics', icon: Smartphone, iconColor: 'text-indigo-600', bg: 'bg-indigo-100' },
   { id: 'accessories', name: 'Accessories', icon: Watch, iconColor: 'text-pink-600', bg: 'bg-pink-100' },
   { id: 'others', name: 'Others', icon: Gift, iconColor: 'text-gray-600', bg: 'bg-gray-100' },

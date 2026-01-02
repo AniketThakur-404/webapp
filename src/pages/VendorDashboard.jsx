@@ -132,7 +132,7 @@ const VendorDashboard = () => {
     if (normalized === "expired") return "text-rose-600 dark:text-rose-400";
     if (normalized === "assigned") return "text-amber-600 dark:text-amber-400";
     if (normalized === "generated" || normalized === "active") {
-      return "text-blue-600 dark:text-blue-400";
+      return "text-primary-strong dark:text-primary";
     }
     return "text-gray-500 dark:text-gray-400";
   };
@@ -627,11 +627,11 @@ const VendorDashboard = () => {
   const lockedBalance = wallet?.lockedBalance;
 
   return (
-    <div className="p-4 pb-24 space-y-4 bg-blue-50/60 dark:bg-zinc-950 min-h-full transition-colors duration-300">
+    <div className="p-4 pb-24 space-y-4 bg-primary/10 dark:bg-zinc-950 min-h-full transition-colors duration-300">
       {!isAuthenticated && (
         <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-100 dark:border-zinc-800 p-4 shadow-sm space-y-3">
           <div className="flex items-center gap-2 text-sm font-semibold text-gray-800 dark:text-gray-200">
-            <ShieldCheck size={16} className="text-blue-600" />
+            <ShieldCheck size={16} className="text-primary-strong" />
             Vendor access
           </div>
           <div className="space-y-2">
@@ -662,7 +662,7 @@ const VendorDashboard = () => {
             type="button"
             onClick={handleSignIn}
             disabled={isSigningIn}
-            className="w-full rounded-xl bg-blue-600 text-white text-sm font-semibold py-2 shadow-md disabled:opacity-60"
+            className="w-full rounded-xl bg-primary text-white text-sm font-semibold py-2 shadow-md disabled:opacity-60"
           >
             {isSigningIn ? "Signing in..." : "Sign in"}
           </button>
@@ -678,7 +678,7 @@ const VendorDashboard = () => {
           <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-100 dark:border-zinc-800 p-4 shadow-sm space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-sm font-semibold text-gray-800 dark:text-gray-200">
-                <Store size={16} className="text-blue-600" />
+                <Store size={16} className="text-primary-strong" />
                 Vendor dashboard
               </div>
               <button
@@ -695,19 +695,19 @@ const VendorDashboard = () => {
               {vendorInfo?.email ? ` - ${vendorInfo.email}` : ""}
             </div>
             <div className="grid grid-cols-3 gap-2">
-              <div className="rounded-xl border border-gray-100 dark:border-zinc-800 bg-blue-50/60 dark:bg-zinc-900 p-3">
+              <div className="rounded-xl border border-gray-100 dark:border-zinc-800 bg-primary/10 dark:bg-zinc-900 p-3">
                 <div className="text-[10px] text-gray-500 dark:text-gray-400">Wallet</div>
                 <div className="text-sm font-bold text-gray-900 dark:text-gray-100">
                   INR {formatAmount(walletBalance)}
                 </div>
               </div>
-              <div className="rounded-xl border border-gray-100 dark:border-zinc-800 bg-blue-50/60 dark:bg-zinc-900 p-3">
+              <div className="rounded-xl border border-gray-100 dark:border-zinc-800 bg-primary/10 dark:bg-zinc-900 p-3">
                 <div className="text-[10px] text-gray-500 dark:text-gray-400">Active QRs</div>
                 <div className="text-sm font-bold text-gray-900 dark:text-gray-100">
                   {qrStats.active}
                 </div>
               </div>
-              <div className="rounded-xl border border-gray-100 dark:border-zinc-800 bg-blue-50/60 dark:bg-zinc-900 p-3">
+              <div className="rounded-xl border border-gray-100 dark:border-zinc-800 bg-primary/10 dark:bg-zinc-900 p-3">
                 <div className="text-[10px] text-gray-500 dark:text-gray-400">Redeemed</div>
                 <div className="text-sm font-bold text-gray-900 dark:text-gray-100">
                   {qrStats.redeemed}
@@ -722,7 +722,7 @@ const VendorDashboard = () => {
 
         <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-100 dark:border-zinc-800 p-4 shadow-sm space-y-3">
           <div className="flex items-center gap-2 text-sm font-semibold text-gray-800 dark:text-gray-200">
-            <Store size={16} className="text-blue-600" />
+            <Store size={16} className="text-primary-strong" />
             Brand registration
           </div>
           <div className="text-xs text-gray-500 dark:text-gray-400">
@@ -818,7 +818,7 @@ const VendorDashboard = () => {
             type="button"
             onClick={handleRegistrationSave}
             disabled={isSavingRegistration}
-            className="w-full rounded-xl bg-blue-600 text-white text-sm font-semibold py-2 shadow-md disabled:opacity-60"
+            className="w-full rounded-xl bg-primary text-white text-sm font-semibold py-2 shadow-md disabled:opacity-60"
           >
             {isSavingRegistration ? "Saving..." : "Save registration"}
           </button>
@@ -833,7 +833,7 @@ const VendorDashboard = () => {
         <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-100 dark:border-zinc-800 p-4 shadow-sm space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 text-sm font-semibold text-gray-800 dark:text-gray-200">
-              <BadgeCheck size={16} className="text-blue-600" />
+              <BadgeCheck size={16} className="text-primary-strong" />
               Campaigns
             </div>
             <button
@@ -962,7 +962,7 @@ const VendorDashboard = () => {
                       <button
                         type="button"
                         onClick={() => setCampaignId(campaign.id)}
-                        className="text-blue-600 dark:text-blue-400"
+                        className="text-primary-strong dark:text-primary"
                       >
                         Use
                       </button>
@@ -983,7 +983,7 @@ const VendorDashboard = () => {
 
         <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-100 dark:border-zinc-800 p-4 shadow-sm space-y-3">
           <div className="flex items-center gap-2 text-sm font-semibold text-gray-800 dark:text-gray-200">
-            <Wallet size={16} className="text-blue-600" />
+            <Wallet size={16} className="text-primary-strong" />
             Wallet controls
           </div>
             <div className="grid grid-cols-2 gap-3">
@@ -1034,7 +1034,7 @@ const VendorDashboard = () => {
 
           <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-100 dark:border-zinc-800 p-4 shadow-sm space-y-3">
             <div className="flex items-center gap-2 text-sm font-semibold text-gray-800 dark:text-gray-200">
-              <QrCode size={16} className="text-blue-600" />
+              <QrCode size={16} className="text-primary-strong" />
               Generate QR batch
             </div>
             {campaigns.length === 0 ? (
@@ -1086,7 +1086,7 @@ const VendorDashboard = () => {
                 type="button"
                 onClick={handleOrderQrs}
                 disabled={isOrdering}
-                className="w-full rounded-xl bg-blue-600 text-white text-sm font-semibold py-2 shadow-md disabled:opacity-60"
+                className="w-full rounded-xl bg-primary text-white text-sm font-semibold py-2 shadow-md disabled:opacity-60"
               >
                 {isOrdering ? "Generating..." : "Generate QRs"}
               </button>
@@ -1109,7 +1109,7 @@ const VendorDashboard = () => {
                       <button
                         type="button"
                         onClick={() => handleCopyHash(hash)}
-                        className="text-[10px] font-semibold text-blue-600 dark:text-blue-400"
+                        className="text-[10px] font-semibold text-primary-strong dark:text-primary"
                       >
                         Copy
                       </button>
@@ -1130,7 +1130,7 @@ const VendorDashboard = () => {
           <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-100 dark:border-zinc-800 p-4 shadow-sm space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-sm font-semibold text-gray-800 dark:text-gray-200">
-                <ClipboardCheck size={16} className="text-blue-600" />
+                <ClipboardCheck size={16} className="text-primary-strong" />
                 QR inventory
               </div>
               <button
@@ -1160,7 +1160,7 @@ const VendorDashboard = () => {
                 <button
                   type="button"
                   onClick={() => setShowAllInventory((prev) => !prev)}
-                  className="font-semibold text-blue-600 dark:text-blue-400"
+                  className="font-semibold text-primary-strong dark:text-primary"
                 >
                   {showAllInventory ? "Show less" : "View all"}
                 </button>
@@ -1202,7 +1202,7 @@ const VendorDashboard = () => {
           <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-100 dark:border-zinc-800 p-4 shadow-sm space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-sm font-semibold text-gray-800 dark:text-gray-200">
-                <QrCode size={16} className="text-blue-600" />
+                <QrCode size={16} className="text-primary-strong" />
                 QR gallery
               </div>
               <div className="flex items-center gap-2">
@@ -1264,7 +1264,7 @@ const VendorDashboard = () => {
                       <button
                         type="button"
                         onClick={() => setActiveQr(qr)}
-                        className="text-blue-600 dark:text-blue-400"
+                        className="text-primary-strong dark:text-primary"
                       >
                         View
                       </button>
@@ -1294,7 +1294,7 @@ const VendorDashboard = () => {
 
           <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-100 dark:border-zinc-800 p-4 shadow-sm space-y-3">
             <div className="flex items-center gap-2 text-sm font-semibold text-gray-800 dark:text-gray-200">
-              <ScanLine size={16} className="text-blue-600" />
+              <ScanLine size={16} className="text-primary-strong" />
               Scan and redeem
             </div>
             <input
@@ -1317,7 +1317,7 @@ const VendorDashboard = () => {
                 type="button"
                 onClick={handleRedeemQr}
                 disabled={isRedeeming}
-                className="w-full rounded-xl bg-blue-600 text-white text-sm font-semibold py-2 shadow-md disabled:opacity-60"
+                className="w-full rounded-xl bg-primary text-white text-sm font-semibold py-2 shadow-md disabled:opacity-60"
               >
                 {isRedeeming ? "Redeeming..." : "Redeem"}
               </button>
@@ -1372,7 +1372,7 @@ const VendorDashboard = () => {
               <button
                 type="button"
                 onClick={() => handleDownloadQr(activeQr.uniqueHash)}
-                className="rounded-xl bg-blue-600 text-white py-2"
+                className="rounded-xl bg-primary text-white py-2"
               >
                 Download
               </button>

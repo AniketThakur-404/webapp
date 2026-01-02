@@ -1,0 +1,1833 @@
+import React, { useEffect, useMemo, useState } from "react";
+import {
+  Activity,
+  ArrowLeftRight,
+  BarChart3,
+  Banknote,
+  Bell,
+  Building2,
+  ChevronRight,
+  CircleDollarSign,
+  ClipboardList,
+  CreditCard,
+  Download,
+  HandCoins,
+  LayoutGrid,
+  LogOut,
+  Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PiggyBank,
+  QrCode,
+  RefreshCw,
+  ScanLine,
+  Search,
+  ShieldCheck,
+  Sparkles,
+  Store,
+  TrendingUp,
+  UserRound,
+  Users,
+  Wallet,
+  Zap,
+  X,
+} from "lucide-react";
+import { ModeToggle } from "../components/ModeToggle";
+import AdminSidebar from "../components/AdminSidebar";
+import BalanceCard from "../components/BalanceCard";
+import CashbackRewardsCard from "../components/CashbackRewardsCard";
+import RecentActivitiesCard from "../components/RecentActivitiesCard";
+import ServiceIconGrid from "../components/ServiceIconGrid";
+import ActionButtonGroup from "../components/ActionButtonGroup";
+import EarnRewardCard from "../components/EarnRewardCard";
+import { useTheme } from "../components/ThemeProvider";
+import {
+  loginWithEmail,
+  getMe,
+  getAdminDashboard,
+  getAdminUsers,
+  updateAdminUserStatus,
+  getAdminVendors,
+  updateAdminVendorStatus,
+  creditVendorWalletAdmin,
+  updateAdminCampaignStatus,
+  getAdminTransactions,
+  getAdminQrs,
+  getAdminWithdrawals,
+  processAdminWithdrawal,
+} from "../lib/api";
+
+const ADMIN_TOKEN_KEY = "cashback_admin_token";
+const ADMIN_SIDEBAR_KEY = "cashback_admin_sidebar";
+
+const navItems = [
+  { id: "overview", label: "Overview", icon: LayoutGrid },
+  { id: "analytics", label: "Analytics", icon: BarChart3 },
+  { id: "operations", label: "Operations", icon: Wallet },
+  { id: "payouts", label: "Payouts", icon: CircleDollarSign },
+  { id: "users", label: "Users", icon: Users },
+  { id: "vendors", label: "Vendors", icon: Store },
+  { id: "transactions", label: "Transactions", icon: ClipboardList },
+  { id: "qrs", label: "QR Registry", icon: QrCode },
+];
+
+const quickActions = [
+  { id: "operations", label: "Wallet", icon: PiggyBank },
+  { id: "payouts", label: "Payouts", icon: HandCoins },
+  { id: "analytics", label: "Analytics", icon: Activity },
+  { id: "users", label: "Users", icon: UserRound },
+  { id: "vendors", label: "Vendors", icon: Building2 },
+  { id: "transactions", label: "Transfers", icon: ArrowLeftRight },
+  { id: "qrs", label: "QRs", icon: ScanLine },
+];
+
+const rangeOptions = [
+  { label: "7d", value: 7 },
+  { label: "30d", value: 30 },
+  { label: "90d", value: 90 },
+];
+
+const metricOptions = [
+  { label: "Net flow", value: "transactions" },
+  { label: "New users", value: "users" },
+  { label: "QR volume", value: "qrs" },
+];
+
+const formatAmount = (value) => {
+  if (value === undefined || value === null) return "0.00";
+  const numeric = Number(value);
+  if (Number.isFinite(numeric)) return numeric.toFixed(2);
+  return String(value);
+};
+
+const formatDate = (value) => {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return date.toLocaleString();
+};
+
+const getStatusClasses = (status) => {
+  const normalized = String(status || "").toLowerCase();
+  if (["active", "success", "processed"].includes(normalized)) {
+    return "text-emerald-600 dark:text-emerald-400";
+  }
+  if (["pending"].includes(normalized)) {
+    return "text-amber-600 dark:text-amber-400";
+  }
+  if (["paused", "inactive"].includes(normalized)) {
+    return "text-yellow-600 dark:text-yellow-400";
+  }
+  if (["rejected", "blocked", "failed"].includes(normalized)) {
+    return "text-rose-600 dark:text-rose-400";
+  }
+  return "text-slate-500 dark:text-slate-400";
+};
+
+const getDayKey = (date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const buildDayBuckets = (days) => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const start = new Date(today);
+  start.setDate(today.getDate() - (days - 1));
+
+  const buckets = [];
+  const indexMap = new Map();
+
+  for (let i = 0; i < days; i += 1) {
+    const date = new Date(start);
+    date.setDate(start.getDate() + i);
+    const key = getDayKey(date);
+    buckets.push({ date, key });
+    indexMap.set(key, i);
+  }
+
+  return { buckets, indexMap, start, end: today };
+};
+
+const buildTransactionSeries = (transactions, days) => {
+  const { buckets, indexMap } = buildDayBuckets(days);
+  const credit = new Array(days).fill(0);
+  const debit = new Array(days).fill(0);
+
+  transactions.forEach((tx) => {
+    const date = new Date(tx.createdAt);
+    if (Number.isNaN(date.getTime())) return;
+    const index = indexMap.get(getDayKey(date));
+    if (index === undefined) return;
+
+    const amount = Number(tx.amount) || 0;
+    if (tx.type === "credit") credit[index] += amount;
+    if (tx.type === "debit") debit[index] += amount;
+  });
+
+  const net = credit.map((value, index) => value - debit[index]);
+
+  return { buckets, credit, debit, net };
+};
+
+const buildCountSeries = (items, days, getDate) => {
+  const { buckets, indexMap } = buildDayBuckets(days);
+  const counts = new Array(days).fill(0);
+
+  items.forEach((item) => {
+    const dateValue = getDate(item);
+    if (!dateValue) return;
+    const date = new Date(dateValue);
+    if (Number.isNaN(date.getTime())) return;
+    const index = indexMap.get(getDayKey(date));
+    if (index === undefined) return;
+    counts[index] += 1;
+  });
+
+  return { buckets, counts };
+};
+
+const buildStatusCounts = (items, key) =>
+  items.reduce((acc, item) => {
+    const status = String(item?.[key] || "unknown").toLowerCase();
+    acc[status] = (acc[status] || 0) + 1;
+    return acc;
+  }, {});
+
+const Sparkline = ({ data, stroke = "#81cc2a", fill = "rgba(129, 204, 42, 0.2)" }) => {
+  if (!data || data.length === 0) {
+    return <div className="h-16 w-full rounded-2xl bg-slate-200/70 dark:bg-white/10" />;
+  }
+
+  const min = Math.min(...data);
+  const max = Math.max(...data);
+  const range = max - min || 1;
+  const width = data.length > 1 ? data.length - 1 : 1;
+  const points = data
+    .map((value, index) => {
+      const x = (index / width) * 100;
+      const y = 100 - ((value - min) / range) * 100;
+      return `${x},${y}`;
+    })
+    .join(" ");
+  const areaPoints = `${points} 100,100 0,100`;
+
+  return (
+    <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="h-16 w-full">
+      <polygon points={areaPoints} fill={fill} />
+      <polyline
+        points={points}
+        fill="none"
+        stroke={stroke}
+        strokeWidth="3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+};
+
+const AdminDashboard = () => {
+  const [token, setToken] = useState(() => localStorage.getItem(ADMIN_TOKEN_KEY));
+  const [adminInfo, setAdminInfo] = useState(null);
+
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [authStatus, setAuthStatus] = useState("");
+  const [authError, setAuthError] = useState("");
+  const [isSigningIn, setIsSigningIn] = useState(false);
+
+  const [dashboardStats, setDashboardStats] = useState(null);
+  const [dashboardError, setDashboardError] = useState("");
+  const [isLoadingDashboard, setIsLoadingDashboard] = useState(false);
+
+  const [users, setUsers] = useState([]);
+  const [usersError, setUsersError] = useState("");
+  const [isLoadingUsers, setIsLoadingUsers] = useState(false);
+  const [userStatusUpdates, setUserStatusUpdates] = useState({});
+  const [userActionStatus, setUserActionStatus] = useState("");
+  const [userActionError, setUserActionError] = useState("");
+  const [showAllUsers, setShowAllUsers] = useState(false);
+
+  const [vendors, setVendors] = useState([]);
+  const [vendorsError, setVendorsError] = useState("");
+  const [isLoadingVendors, setIsLoadingVendors] = useState(false);
+  const [vendorStatusUpdates, setVendorStatusUpdates] = useState({});
+  const [vendorActionStatus, setVendorActionStatus] = useState("");
+  const [vendorActionError, setVendorActionError] = useState("");
+  const [showAllVendors, setShowAllVendors] = useState(false);
+
+  const [transactions, setTransactions] = useState([]);
+  const [transactionsError, setTransactionsError] = useState("");
+  const [isLoadingTransactions, setIsLoadingTransactions] = useState(false);
+  const [showAllTransactions, setShowAllTransactions] = useState(false);
+
+  const [qrs, setQrs] = useState([]);
+  const [qrsError, setQrsError] = useState("");
+  const [isLoadingQrs, setIsLoadingQrs] = useState(false);
+  const [showAllQrs, setShowAllQrs] = useState(false);
+
+  const [withdrawals, setWithdrawals] = useState([]);
+  const [withdrawalsError, setWithdrawalsError] = useState("");
+  const [isLoadingWithdrawals, setIsLoadingWithdrawals] = useState(false);
+  const [withdrawalAction, setWithdrawalAction] = useState({
+    id: "",
+    status: "processed",
+    referenceId: "",
+    adminNote: "",
+  });
+  const [withdrawalStatus, setWithdrawalStatus] = useState("");
+  const [withdrawalError, setWithdrawalError] = useState("");
+  const [showAllWithdrawals, setShowAllWithdrawals] = useState(false);
+
+  const [walletCredit, setWalletCredit] = useState({
+    vendorId: "",
+    amount: "",
+    description: "",
+  });
+  const [walletStatus, setWalletStatus] = useState("");
+  const [walletError, setWalletError] = useState("");
+  const [isCreditingWallet, setIsCreditingWallet] = useState(false);
+
+  const [campaignControl, setCampaignControl] = useState({
+    id: "",
+    status: "paused",
+  });
+  const [campaignStatus, setCampaignStatus] = useState("");
+  const [campaignError, setCampaignError] = useState("");
+  const [isUpdatingCampaign, setIsUpdatingCampaign] = useState(false);
+
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem(ADMIN_SIDEBAR_KEY) === "collapsed";
+  });
+  const [activeNav, setActiveNav] = useState("overview");
+  const [analyticsRange, setAnalyticsRange] = useState(30);
+  const [analyticsMetric, setAnalyticsMetric] = useState("transactions");
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const isAuthenticated = Boolean(token);
+
+  const clearSession = (message) => {
+    localStorage.removeItem(ADMIN_TOKEN_KEY);
+    setToken(null);
+    setAdminInfo(null);
+    setAuthStatus(message || "");
+  };
+
+  const handleRequestError = (err, setter, fallback) => {
+    if (err?.status === 401) {
+      clearSession("Session expired.");
+    } else {
+      setter(err.message || fallback);
+    }
+  };
+
+  const loadAdmin = async (authToken) => {
+    try {
+      const data = await getMe(authToken);
+      if (data?.role && data.role !== "admin") {
+        clearSession("This account is not an admin.");
+        setAuthError("This account is not an admin.");
+        return;
+      }
+      setAdminInfo(data);
+    } catch (err) {
+      handleRequestError(err, setAuthError, "Unable to load admin profile.");
+    }
+  };
+
+  const loadDashboardStats = async (authToken = token) => {
+    if (!authToken) return;
+    setIsLoadingDashboard(true);
+    setDashboardError("");
+    try {
+      const data = await getAdminDashboard(authToken);
+      setDashboardStats(data);
+    } catch (err) {
+      handleRequestError(err, setDashboardError, "Unable to load dashboard stats.");
+    } finally {
+      setIsLoadingDashboard(false);
+    }
+  };
+
+  const loadUsers = async (authToken = token) => {
+    if (!authToken) return;
+    setIsLoadingUsers(true);
+    setUsersError("");
+    try {
+      const data = await getAdminUsers(authToken);
+      setUsers(data || []);
+    } catch (err) {
+      handleRequestError(err, setUsersError, "Unable to load users.");
+    } finally {
+      setIsLoadingUsers(false);
+    }
+  };
+
+  const loadVendors = async (authToken = token) => {
+    if (!authToken) return;
+    setIsLoadingVendors(true);
+    setVendorsError("");
+    try {
+      const data = await getAdminVendors(authToken);
+      setVendors(data || []);
+    } catch (err) {
+      handleRequestError(err, setVendorsError, "Unable to load vendors.");
+    } finally {
+      setIsLoadingVendors(false);
+    }
+  };
+
+  const loadTransactions = async (authToken = token) => {
+    if (!authToken) return;
+    setIsLoadingTransactions(true);
+    setTransactionsError("");
+    try {
+      const data = await getAdminTransactions(authToken);
+      setTransactions(data || []);
+    } catch (err) {
+      handleRequestError(err, setTransactionsError, "Unable to load transactions.");
+    } finally {
+      setIsLoadingTransactions(false);
+    }
+  };
+
+  const loadQrs = async (authToken = token) => {
+    if (!authToken) return;
+    setIsLoadingQrs(true);
+    setQrsError("");
+    try {
+      const data = await getAdminQrs(authToken);
+      setQrs(data || []);
+    } catch (err) {
+      handleRequestError(err, setQrsError, "Unable to load QR codes.");
+    } finally {
+      setIsLoadingQrs(false);
+    }
+  };
+
+  const loadWithdrawals = async (authToken = token) => {
+    if (!authToken) return;
+    setIsLoadingWithdrawals(true);
+    setWithdrawalsError("");
+    try {
+      const data = await getAdminWithdrawals(authToken);
+      setWithdrawals(data || []);
+    } catch (err) {
+      handleRequestError(err, setWithdrawalsError, "Unable to load withdrawals.");
+    } finally {
+      setIsLoadingWithdrawals(false);
+    }
+  };
+
+  const loadAll = async (authToken = token) => {
+    if (!authToken) return;
+    setIsRefreshing(true);
+    await Promise.all([
+      loadDashboardStats(authToken),
+      loadUsers(authToken),
+      loadVendors(authToken),
+      loadTransactions(authToken),
+      loadQrs(authToken),
+      loadWithdrawals(authToken),
+    ]);
+    setIsRefreshing(false);
+  };
+
+  useEffect(() => {
+    if (!token) return;
+    loadAdmin(token);
+    loadAll(token);
+  }, [token]);
+
+  useEffect(() => {
+    localStorage.setItem(
+      ADMIN_SIDEBAR_KEY,
+      sidebarCollapsed ? "collapsed" : "expanded"
+    );
+  }, [sidebarCollapsed]);
+
+  const handleSignIn = async () => {
+    if (!email.trim() || !password) {
+      setAuthError("Enter email and password to continue.");
+      return;
+    }
+    setAuthError("");
+    setAuthStatus("");
+    setIsSigningIn(true);
+    try {
+      const data = await loginWithEmail(email.trim(), password);
+      if (data.role !== "admin") {
+        throw new Error("This account is not an admin.");
+      }
+      localStorage.setItem(ADMIN_TOKEN_KEY, data.token);
+      setToken(data.token);
+      setAdminInfo({ name: data.name, email: data.email, role: data.role });
+      setEmail("");
+      setPassword("");
+      setAuthStatus("Signed in successfully.");
+    } catch (err) {
+      setAuthError(err.message || "Sign in failed.");
+    } finally {
+      setIsSigningIn(false);
+    }
+  };
+
+  const handleSignOut = () => {
+    clearSession("Signed out.");
+    setUsers([]);
+    setVendors([]);
+    setTransactions([]);
+    setQrs([]);
+    setWithdrawals([]);
+  };
+
+  const handleUserStatusSave = async (userId, currentStatus) => {
+    const nextStatus = userStatusUpdates[userId] || currentStatus;
+    if (!nextStatus) return;
+    setUserActionStatus("");
+    setUserActionError("");
+    try {
+      await updateAdminUserStatus(token, userId, nextStatus);
+      setUserActionStatus("User status updated.");
+      await loadUsers(token);
+    } catch (err) {
+      handleRequestError(err, setUserActionError, "Unable to update user status.");
+    }
+  };
+
+  const handleVendorStatusSave = async (vendorId, currentStatus) => {
+    const nextStatus = vendorStatusUpdates[vendorId] || currentStatus;
+    if (!nextStatus) return;
+    setVendorActionStatus("");
+    setVendorActionError("");
+    try {
+      await updateAdminVendorStatus(token, vendorId, nextStatus);
+      setVendorActionStatus("Vendor status updated.");
+      await loadVendors(token);
+    } catch (err) {
+      handleRequestError(err, setVendorActionError, "Unable to update vendor status.");
+    }
+  };
+
+  const handleWalletCredit = async () => {
+    if (!walletCredit.vendorId.trim() || !walletCredit.amount) {
+      setWalletError("Vendor ID and amount are required.");
+      return;
+    }
+    setWalletError("");
+    setWalletStatus("");
+    setIsCreditingWallet(true);
+    try {
+      await creditVendorWalletAdmin(token, {
+        vendorId: walletCredit.vendorId.trim(),
+        amount: Number(walletCredit.amount),
+        description: walletCredit.description.trim() || undefined,
+      });
+      setWalletStatus("Wallet credited successfully.");
+      setWalletCredit({ vendorId: "", amount: "", description: "" });
+      await loadTransactions(token);
+    } catch (err) {
+      handleRequestError(err, setWalletError, "Unable to credit vendor wallet.");
+    } finally {
+      setIsCreditingWallet(false);
+    }
+  };
+
+  const handleCampaignStatusUpdate = async () => {
+    if (!campaignControl.id.trim()) {
+      setCampaignError("Campaign ID is required.");
+      return;
+    }
+    setCampaignError("");
+    setCampaignStatus("");
+    setIsUpdatingCampaign(true);
+    try {
+      await updateAdminCampaignStatus(token, campaignControl.id.trim(), campaignControl.status);
+      setCampaignStatus("Campaign status updated.");
+      setCampaignControl((prev) => ({ ...prev, id: "" }));
+      await loadVendors(token);
+    } catch (err) {
+      handleRequestError(err, setCampaignError, "Unable to update campaign status.");
+    } finally {
+      setIsUpdatingCampaign(false);
+    }
+  };
+
+  const handleWithdrawalProcess = async () => {
+    if (!withdrawalAction.id.trim()) {
+      setWithdrawalError("Withdrawal ID is required.");
+      return;
+    }
+    setWithdrawalError("");
+    setWithdrawalStatus("");
+    try {
+      await processAdminWithdrawal(token, withdrawalAction.id.trim(), {
+        status: withdrawalAction.status,
+        referenceId: withdrawalAction.referenceId.trim() || undefined,
+        adminNote: withdrawalAction.adminNote.trim() || undefined,
+      });
+      setWithdrawalStatus("Withdrawal updated.");
+      setWithdrawalAction({ id: "", status: "processed", referenceId: "", adminNote: "" });
+      await loadWithdrawals(token);
+      await loadTransactions(token);
+    } catch (err) {
+      handleRequestError(err, setWithdrawalError, "Unable to process withdrawal.");
+    }
+  };
+
+  const handleNavClick = (id) => {
+    setActiveNav(id);
+    const section = document.getElementById(id);
+    if (section) {
+      section.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+    setSidebarOpen(false);
+  };
+  const normalizedSearch = searchQuery.trim().toLowerCase();
+
+  const filteredUsers = useMemo(() => {
+    if (!normalizedSearch) return users;
+    return users.filter((user) =>
+      [user.name, user.email, user.phoneNumber]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(normalizedSearch))
+    );
+  }, [normalizedSearch, users]);
+
+  const filteredVendors = useMemo(() => {
+    if (!normalizedSearch) return vendors;
+    return vendors.filter((vendor) => {
+      const values = [
+        vendor.businessName,
+        vendor.User?.email,
+        vendor.contactPhone,
+        vendor.gstin,
+      ].filter(Boolean);
+      return values.some((value) => String(value).toLowerCase().includes(normalizedSearch));
+    });
+  }, [normalizedSearch, vendors]);
+
+  const limitedUsers = useMemo(
+    () => (showAllUsers ? filteredUsers : filteredUsers.slice(0, 6)),
+    [showAllUsers, filteredUsers]
+  );
+  const limitedVendors = useMemo(
+    () => (showAllVendors ? filteredVendors : filteredVendors.slice(0, 6)),
+    [showAllVendors, filteredVendors]
+  );
+  const limitedTransactions = useMemo(
+    () => (showAllTransactions ? transactions : transactions.slice(0, 8)),
+    [showAllTransactions, transactions]
+  );
+  const limitedQrs = useMemo(() => (showAllQrs ? qrs : qrs.slice(0, 8)), [showAllQrs, qrs]);
+  const limitedWithdrawals = useMemo(
+    () => (showAllWithdrawals ? withdrawals : withdrawals.slice(0, 6)),
+    [showAllWithdrawals, withdrawals]
+  );
+  const transactionPreview = useMemo(() => transactions.slice(0, 5), [transactions]);
+  const withdrawalPreview = useMemo(() => withdrawals.slice(0, 4), [withdrawals]);
+  const pendingWithdrawalCount = useMemo(
+    () => withdrawals.filter((withdrawal) => withdrawal.status === "pending").length,
+    [withdrawals]
+  );
+
+  const transactionTotals = useMemo(
+    () =>
+      transactions.reduce(
+        (acc, tx) => {
+          const amount = Number(tx.amount) || 0;
+          if (tx.type === "credit") acc.credit += amount;
+          if (tx.type === "debit") acc.debit += amount;
+          return acc;
+        },
+        { credit: 0, debit: 0 }
+      ),
+    [transactions]
+  );
+
+  const transactionSeries = useMemo(
+    () => buildTransactionSeries(transactions, analyticsRange),
+    [transactions, analyticsRange]
+  );
+
+  const userSeries = useMemo(
+    () => buildCountSeries(users, analyticsRange, (user) => user.createdAt),
+    [users, analyticsRange]
+  );
+
+  const qrSeries = useMemo(
+    () => buildCountSeries(qrs, analyticsRange, (qr) => qr.createdAt),
+    [qrs, analyticsRange]
+  );
+
+  const analyticsData = useMemo(() => {
+    if (analyticsMetric === "users") {
+      const total = userSeries.counts.reduce((sum, value) => sum + value, 0);
+      return { data: userSeries.counts, label: "New users", total };
+    }
+    if (analyticsMetric === "qrs") {
+      const total = qrSeries.counts.reduce((sum, value) => sum + value, 0);
+      return { data: qrSeries.counts, label: "QR volume", total };
+    }
+    const total = transactionSeries.net.reduce((sum, value) => sum + value, 0);
+    return { data: transactionSeries.net, label: "Net flow", total };
+  }, [analyticsMetric, qrSeries.counts, transactionSeries.net, userSeries.counts]);
+
+  const analyticsTrend = useMemo(() => {
+    const data = analyticsData.data;
+    if (!data || data.length < 4) return null;
+    const midpoint = Math.floor(data.length / 2);
+    const previous = data.slice(0, midpoint).reduce((sum, value) => sum + value, 0);
+    const current = data.slice(midpoint).reduce((sum, value) => sum + value, 0);
+    if (previous === 0) return null;
+    return ((current - previous) / Math.abs(previous)) * 100;
+  }, [analyticsData.data]);
+
+  const qrStatusCounts = useMemo(() => buildStatusCounts(qrs, "status"), [qrs]);
+  const userStatusCounts = useMemo(() => buildStatusCounts(users, "status"), [users]);
+  const vendorStatusCounts = useMemo(() => buildStatusCounts(vendors, "status"), [vendors]);
+
+  const buildStatusRows = (counts) => {
+    const entries = Object.entries(counts);
+    const total = entries.reduce((sum, [, value]) => sum + value, 0);
+    return entries
+      .map(([status, value]) => ({
+        status,
+        value,
+        percent: total ? Math.round((value / total) * 100) : 0,
+      }))
+      .sort((a, b) => b.value - a.value);
+  };
+
+  if (!isAuthenticated) {
+    return (
+      <div className="relative min-h-screen bg-[#f6f5ee] text-slate-900 font-admin-body dark:bg-[#0b0b0d] dark:text-slate-100">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_10%_0%,rgba(129,204,42,0.18),transparent_50%),radial-gradient(circle_at_90%_0%,rgba(255,255,255,0.95),transparent_55%)] dark:bg-[radial-gradient(circle_at_15%_10%,rgba(236,255,120,0.18),transparent_40%),radial-gradient(circle_at_85%_0%,rgba(129,204,42,0.2),transparent_45%),radial-gradient(circle_at_70%_90%,rgba(255,255,255,0.08),transparent_50%)]" />
+        <div className="relative z-10 flex min-h-screen items-center justify-center px-6 py-10">
+          <div className="grid w-full max-w-5xl gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+            <div className="rounded-3xl border border-slate-200/80 bg-white p-8 text-slate-900 shadow-[0_24px_60px_-45px_rgba(15,23,42,0.25)] dark:border-white/10 dark:bg-white/95 dark:shadow-[0_40px_90px_-60px_rgba(0,0,0,0.8)]">
+              <div className="flex items-center gap-3">
+                <div className="h-12 w-40">
+                  <img
+                    src="/light theme incentify logo.png"
+                    alt="Incentify Online"
+                    className="h-full w-full object-contain object-left block dark:hidden"
+                  />
+                  <img
+                    src="/dark theme incentify logo.png"
+                    alt="Incentify Online"
+                    className="h-full w-full object-contain object-left hidden dark:block"
+                  />
+                </div>
+                <span className="rounded-full bg-[#e8ff74] px-3 py-1 text-xs font-semibold text-slate-900">
+                  Admin
+                </span>
+              </div>
+              <div className="mt-8 space-y-4">
+                <h1 className="text-3xl font-admin-heading font-semibold text-slate-900">
+                  Admin command center
+                </h1>
+                <p className="text-sm text-slate-600">
+                  Monitor campaigns, wallets, payouts, and live activity with the latest analytics
+                  studio.
+                </p>
+              </div>
+              <div className="mt-10 grid gap-4 sm:grid-cols-2">
+                {[
+                  { label: "Live alerts", value: "Real-time" },
+                  { label: "Secure access", value: "Role based" },
+                  { label: "Automations", value: "Smart routing" },
+                  { label: "Refresh", value: "Instant" },
+                ].map((item) => (
+                  <div
+                    key={item.label}
+                    className="rounded-2xl border border-slate-200/70 bg-white px-4 py-3 text-xs font-semibold text-slate-700 shadow-sm dark:border-white/20 dark:bg-white/90"
+                  >
+                    <div className="text-[11px] uppercase tracking-wide text-slate-400">
+                      {item.label}
+                    </div>
+                    <div className="mt-1 text-sm font-admin-heading text-slate-900">
+                      {item.value}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-slate-200/80 bg-white p-8 text-slate-900 shadow-[0_24px_60px_-45px_rgba(15,23,42,0.25)] dark:border-white/10 dark:bg-white/95 dark:shadow-[0_40px_90px_-60px_rgba(0,0,0,0.8)]">
+              <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                <ShieldCheck size={16} className="text-primary-strong" />
+                Admin access
+              </div>
+              <div className="mt-6 space-y-3">
+                <label className="text-xs font-semibold text-slate-500">
+                  Email
+                </label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  placeholder="admin@incentify.local"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-primary-strong focus:outline-none"
+                />
+              </div>
+              <div className="mt-4 space-y-3">
+                <label className="text-xs font-semibold text-slate-500">
+                  Password
+                </label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  placeholder="Enter password"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-primary-strong focus:outline-none"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={handleSignIn}
+                disabled={isSigningIn}
+                className="mt-6 w-full rounded-xl bg-slate-900 text-white text-sm font-semibold py-2 shadow-md transition hover:bg-slate-800 disabled:opacity-60"
+              >
+                {isSigningIn ? "Signing in..." : "Sign in"}
+              </button>
+              {authStatus && (
+                <div className="mt-3 text-xs text-emerald-600 font-semibold">{authStatus}</div>
+              )}
+              {authError && (
+                <div className="mt-3 text-xs text-rose-600 font-semibold">{authError}</div>
+              )}
+              <div className="mt-6 text-xs text-slate-500">
+                Use the seeded admin credentials or create a new admin from the backend.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const greetingName = adminInfo?.name?.split(" ")[0] || "Jon Doe";
+  const { effectiveTheme } = useTheme();
+
+  // Calculate balance from dashboard stats
+  const totalBalance = useMemo(() => {
+    if (!dashboardStats) return 0;
+    const credit = dashboardStats.totalCredit || 0;
+    const debit = dashboardStats.totalDebit || 0;
+    return credit - debit;
+  }, [dashboardStats]);
+
+  // Map transactions to activities for the card
+  const recentActivities = useMemo(() => {
+    return transactionPreview.map((tx, index) => ({
+      id: tx.id || index,
+      type: tx.type === 'credit' ? 'cashback' : 'transfer',
+      title: tx.description || `Transaction #${tx.id}`,
+      amount: tx.type === 'credit' ? Number(tx.amount) : -Number(tx.amount),
+      date: new Date(tx.createdAt).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric'
+      }),
+      status: tx.status || 'Completed',
+    }));
+  }, [transactionPreview]);
+
+  return (
+    <div className="flex min-h-screen bg-gradient-to-br from-[#0d0d0e] via-[#1a1a1c] to-[#0d0d0e] text-white">
+      {/* New Sidebar */}
+      <div className={`hidden lg:block ${sidebarCollapsed ? 'lg:w-20' : 'lg:w-64'} transition-all duration-300`}>
+        <AdminSidebar
+          collapsed={sidebarCollapsed}
+          onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+          activeNav={activeNav}
+          onNavClick={handleNavClick}
+          adminInfo={adminInfo}
+          onLogout={handleSignOut}
+        />
+      </div>
+
+      {/* Mobile Sidebar Overlay */}
+      {sidebarOpen && (
+        <>
+          <button
+            onClick={() => setSidebarOpen(false)}
+            className="fixed inset-0 z-40 bg-black/50 lg:hidden"
+            aria-label="Close sidebar"
+          />
+          <div className="fixed inset-y-0 left-0 z-50 lg:hidden">
+            <AdminSidebar
+              collapsed={false}
+              onToggleCollapse={() => setSidebarOpen(false)}
+              activeNav={activeNav}
+              onNavClick={(id) => {
+                handleNavClick(id);
+                setSidebarOpen(false);
+              }}
+              adminInfo={adminInfo}
+              onLogout={handleSignOut}
+            />
+          </div>
+        </>
+      )}
+
+      {/* Main Content Area */}
+      <div className="flex-1 min-h-screen overflow-y-auto">
+        {/* Header */}
+        <header className="sticky top-0 z-30 backdrop-blur-xl bg-[#0d0d0e]/80 border-b border-white/10">
+          <div className="px-6 py-4 flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => setSidebarOpen(true)}
+                className="lg:hidden p-2 rounded-lg hover:bg-white/5 text-gray-400 hover:text-white transition-colors"
+                aria-label="Open menu"
+              >
+                <Menu size={20} />
+              </button>
+              <div>
+                <h1 className="text-2xl font-bold text-white">Overview</h1>
+                <p className="text-sm text-white/60">Hi {greetingName}, welcome back!</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => loadAll(token)}
+                disabled={isRefreshing}
+                className="p-2 rounded-full hover:bg-white/10 transition-colors text-gray-400 hover:text-white"
+                aria-label="Refresh"
+              >
+                <Search size={20} />
+              </button>
+              <button
+                className="relative p-2 rounded-full hover:bg-white/10 transition-colors text-gray-400 hover:text-white"
+                aria-label="Notifications"
+              >
+                <Bell size={20} />
+                {pendingWithdrawalCount > 0 && (
+                  <span className="absolute top-1 right-1 w-2 h-2 bg-[#81cc2a] rounded-full" />
+                )}
+              </button>
+              <ModeToggle />
+            </div>
+          </div>
+        </header>
+
+        {/* Main Content */}
+        <main className="p-6 space-y-6">
+          {transactionsError}
+      </div>
+      )}
+      {transactionPreview.length === 0 && !isLoadingTransactions ? (
+        <div className="mt-3 text-xs text-slate-500">
+          No transactions yet.
+        </div>
+      ) : (
+        <div className="mt-4 space-y-3">
+          {transactionPreview.map((tx) => (
+            <div
+              key={tx.id}
+              className="flex items-center justify-between rounded-2xl border border-slate-200/70 bg-white px-3 py-2 text-xs shadow-sm"
+            >
+              <div>
+                <div className="text-sm font-semibold text-slate-800">
+                  {tx.category?.replace(/_/g, " ") || "Transaction"}
+                </div>
+                <div className="text-[10px] text-slate-400">
+                  {formatDate(tx.createdAt)}
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-sm font-semibold text-slate-900">
+                  {tx.type === "debit" ? "-" : "+"}INR {formatAmount(tx.amount)}
+                </div>
+                <div className={`text-[10px] font-semibold ${getStatusClasses(tx.status)}`}>
+                  {tx.status}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+                </div >
+
+  <div className="grid gap-6 lg:content-start">
+    <div className="flex h-full flex-col rounded-3xl border border-slate-200/80 bg-white p-5 text-slate-900 shadow-[0_24px_60px_-45px_rgba(15,23,42,0.2)] dark:border-white/20 dark:bg-white/95 dark:shadow-[0_30px_70px_-55px_rgba(0,0,0,0.85)]">
+      <div className="flex items-center justify-between">
+        <div className="text-xs uppercase tracking-wide text-slate-400">
+          System pulse
+        </div>
+        <div className="text-xs font-semibold text-slate-500">Last 24h</div>
+      </div>
+      <div className="mt-4 space-y-3">
+        {[
+          {
+            label: "Pending withdrawals",
+            value: withdrawals.length,
+            helper: "Needs review",
+          },
+          {
+            label: "Active users",
+            value: userStatusCounts.active || 0,
+            helper: "Currently active",
+          },
+          {
+            label: "Active vendors",
+            value: vendorStatusCounts.active || 0,
+            helper: "Verified vendors",
+          },
+        ].map((item) => (
+          <div
+            key={item.label}
+            className="rounded-2xl border border-slate-200/70 bg-white px-3 py-2 text-xs text-slate-600 shadow-sm"
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-[11px] uppercase tracking-wide text-slate-400">
+                  {item.label}
+                </div>
+                <div className="mt-1 text-lg font-admin-heading text-slate-900">
+                  {item.value}
+                </div>
+              </div>
+              <div className="text-[10px] text-slate-400">{item.helper}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+
+    <div className="flex h-full flex-col rounded-3xl border border-slate-200/80 bg-white p-5 text-slate-900 shadow-[0_24px_60px_-45px_rgba(15,23,42,0.2)] dark:border-white/20 dark:bg-white/95 dark:shadow-[0_30px_70px_-55px_rgba(0,0,0,0.85)]">
+      <div className="flex items-center justify-between">
+        <div className="text-sm font-semibold">History</div>
+        <button
+          type="button"
+          onClick={() => handleNavClick("payouts")}
+          className="text-xs font-semibold text-slate-600 hover:text-slate-900"
+        >
+          See all
+        </button>
+      </div>
+      <div className="mt-4 space-y-3">
+        {withdrawalPreview.length === 0 ? (
+          <div className="text-xs text-slate-500">No withdrawals yet.</div>
+        ) : (
+          withdrawalPreview.map((withdrawal) => (
+            <div
+              key={withdrawal.id}
+              className="flex items-center justify-between rounded-2xl border border-slate-200/70 bg-white px-3 py-2 text-xs shadow-sm"
+            >
+              <div>
+                <div className="text-sm font-semibold text-slate-800">
+                  {withdrawal.PayoutMethod?.value ||
+                    withdrawal.payoutMethod?.value ||
+                    "UPI payout"}
+                </div>
+                <div className="text-[10px] text-slate-400">
+                  {formatDate(withdrawal.createdAt)}
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-sm font-semibold text-slate-900">
+                  INR {formatAmount(withdrawal.amount)}
+                </div>
+                <div
+                  className={`text-[10px] font-semibold ${getStatusClasses(
+                    withdrawal.status
+                  )}`}
+                >
+                  {withdrawal.status}
+                </div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  </div>
+              </div >
+            </section >
+            <section id="analytics" className="space-y-4 animate-in fade-in slide-in-from-bottom-2">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <h2 className="text-xl font-admin-heading font-semibold text-slate-900 dark:text-white">
+                    Analytics studio
+                  </h2>
+                  <p className="text-sm text-slate-600 dark:text-slate-400">
+                    Latest analytics tool with interactive pulse, range controls, and status maps.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {rangeOptions.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => setAnalyticsRange(option.value)}
+                      className={`rounded-full px-3 py-2 text-xs font-semibold transition ${analyticsRange === option.value
+                        ? "bg-[#e8ff74] text-slate-900"
+                        : "border border-slate-200 bg-white text-slate-700 dark:border-white/10 dark:bg-white/10 dark:text-slate-200"
+                        }`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                  <select
+                    value={analyticsMetric}
+                    onChange={(event) => setAnalyticsMetric(event.target.value)}
+                    className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm dark:border-white/10 dark:bg-white/10 dark:text-slate-200"
+                  >
+                    {metricOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm dark:border-white/10 dark:bg-white/10 dark:text-slate-200"
+                  >
+                    <Download size={14} />
+                    Export
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
+                <div className="rounded-3xl border border-slate-200/80 bg-white p-5 text-slate-900 shadow-[0_24px_60px_-45px_rgba(15,23,42,0.2)] dark:border-white/20 dark:bg-white/95 dark:shadow-[0_30px_70px_-55px_rgba(0,0,0,0.85)]">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <div className="text-xs uppercase tracking-wide text-slate-400">
+                        {analyticsData.label}
+                      </div>
+                      <div className="mt-2 text-2xl font-admin-heading font-semibold text-slate-900">
+                        {analyticsMetric === "transactions"
+                          ? `INR ${formatAmount(analyticsData.total)}`
+                          : analyticsData.total}
+                      </div>
+                      <div className="mt-1 text-xs text-slate-500">
+                        {analyticsRange} day window
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 rounded-full bg-[#e8ff74] px-3 py-2 text-xs font-semibold text-slate-900">
+                      <Activity size={14} />
+                      {analyticsTrend === null
+                        ? "No trend data"
+                        : `${analyticsTrend > 0 ? "+" : ""}${analyticsTrend.toFixed(1)}%`}
+                    </div>
+                  </div>
+                  <div className="mt-4">
+                    <Sparkline data={analyticsData.data} />
+                  </div>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                    {[
+                      {
+                        label: "Credits",
+                        value: `INR ${formatAmount(transactionTotals.credit)}`,
+                        helper: "Gross inflow",
+                      },
+                      {
+                        label: "Debits",
+                        value: `INR ${formatAmount(transactionTotals.debit)}`,
+                        helper: "Wallet payouts",
+                      },
+                      {
+                        label: "QRs",
+                        value: qrs.length,
+                        helper: "Total generated",
+                      },
+                    ].map((item) => (
+                      <div
+                        key={item.label}
+                        className="rounded-2xl border border-slate-200/70 bg-white px-3 py-2 text-xs text-slate-600 shadow-sm"
+                      >
+                        <div className="text-[11px] uppercase tracking-wide text-slate-400">
+                          {item.label}
+                        </div>
+                        <div className="mt-1 text-sm font-admin-heading text-slate-900">
+                          {item.value}
+                        </div>
+                        <div className="text-[10px] text-slate-400">
+                          {item.helper}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-3xl border border-slate-200/80 bg-white p-5 text-slate-900 shadow-[0_24px_60px_-45px_rgba(15,23,42,0.2)] dark:border-white/20 dark:bg-white/95 dark:shadow-[0_30px_70px_-55px_rgba(0,0,0,0.85)]">
+                  <div className="text-xs uppercase tracking-wide text-slate-400">
+                    Status breakdown
+                  </div>
+                  <div className="mt-4 space-y-4">
+                    {[
+                      { label: "QR status", rows: buildStatusRows(qrStatusCounts) },
+                      { label: "User status", rows: buildStatusRows(userStatusCounts) },
+                      { label: "Vendor status", rows: buildStatusRows(vendorStatusCounts) },
+                    ].map((group) => (
+                      <div key={group.label}>
+                        <div className="text-xs font-semibold text-slate-600">
+                          {group.label}
+                        </div>
+                        <div className="mt-2 space-y-2">
+                          {group.rows.length === 0 ? (
+                            <div className="text-xs text-slate-400">No data</div>
+                          ) : (
+                            group.rows.slice(0, 4).map((row) => (
+                              <div key={row.status}>
+                                <div className="flex items-center justify-between text-[11px] text-slate-500">
+                                  <span className="capitalize">{row.status}</span>
+                                  <span>{row.value}</span>
+                                </div>
+                                <div className="mt-1 h-2 w-full rounded-full bg-slate-200/70">
+                                  <div
+                                    className="h-2 rounded-full bg-gradient-to-r from-primary to-primary-strong"
+                                    style={{ width: `${row.percent}%` }}
+                                  />
+                                </div>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section id="operations" className="space-y-4 animate-in fade-in slide-in-from-bottom-2">
+              <div>
+                <h2 className="text-xl font-admin-heading font-semibold text-slate-900 dark:text-white">
+                  Operations
+                </h2>
+                <p className="text-sm text-slate-600 dark:text-slate-400">
+                  Manual actions for wallet credits and campaign controls.
+                </p>
+              </div>
+
+              <div className="grid gap-4 lg:grid-cols-2">
+                <div className="rounded-3xl border border-slate-200/80 bg-white p-5 text-slate-900 shadow-[0_24px_60px_-45px_rgba(15,23,42,0.2)] dark:border-white/20 dark:bg-white/95 dark:shadow-[0_30px_70px_-55px_rgba(0,0,0,0.85)]">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                    <Banknote size={16} className="text-primary-strong" />
+                    Manual wallet credit
+                  </div>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <label className="text-xs font-semibold text-slate-500">
+                        Vendor ID
+                      </label>
+                      <input
+                        type="text"
+                        value={walletCredit.vendorId}
+                        onChange={(event) =>
+                          setWalletCredit((prev) => ({ ...prev, vendorId: event.target.value }))
+                        }
+                        placeholder="Vendor UUID"
+                        className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-primary-strong focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-slate-500">
+                        Amount (INR)
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={walletCredit.amount}
+                        onChange={(event) =>
+                          setWalletCredit((prev) => ({ ...prev, amount: event.target.value }))
+                        }
+                        placeholder="5000"
+                        className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-primary-strong focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                  <div className="mt-3">
+                    <label className="text-xs font-semibold text-slate-500">
+                      Description
+                    </label>
+                    <input
+                      type="text"
+                      value={walletCredit.description}
+                      onChange={(event) =>
+                        setWalletCredit((prev) => ({ ...prev, description: event.target.value }))
+                      }
+                      placeholder="Bonus"
+                      className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-primary-strong focus:outline-none"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleWalletCredit}
+                    disabled={isCreditingWallet}
+                    className="mt-4 w-full rounded-xl bg-[#e8ff74] text-slate-900 text-sm font-semibold py-2 shadow-md transition hover:bg-[#dfff4f] disabled:opacity-60"
+                  >
+                    {isCreditingWallet ? "Crediting..." : "Credit wallet"}
+                  </button>
+                  {walletStatus && (
+                    <div className="mt-3 text-xs text-emerald-600 font-semibold">{walletStatus}</div>
+                  )}
+                  {walletError && (
+                    <div className="mt-3 text-xs text-rose-600 font-semibold">{walletError}</div>
+                  )}
+                </div>
+
+                <div className="rounded-3xl border border-slate-200/80 bg-white p-5 text-slate-900 shadow-[0_24px_60px_-45px_rgba(15,23,42,0.2)] dark:border-white/20 dark:bg-white/95 dark:shadow-[0_30px_70px_-55px_rgba(0,0,0,0.85)]">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                    <CreditCard size={16} className="text-primary-strong" />
+                    Force campaign status
+                  </div>
+                  <div className="mt-4">
+                    <label className="text-xs font-semibold text-slate-500">
+                      Campaign ID
+                    </label>
+                    <input
+                      type="text"
+                      value={campaignControl.id}
+                      onChange={(event) =>
+                        setCampaignControl((prev) => ({ ...prev, id: event.target.value }))
+                      }
+                      placeholder="Campaign UUID"
+                      className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-primary-strong focus:outline-none"
+                    />
+                  </div>
+                  <div className="mt-3">
+                    <label className="text-xs font-semibold text-slate-500">
+                      Status
+                    </label>
+                    <select
+                      value={campaignControl.status}
+                      onChange={(event) =>
+                        setCampaignControl((prev) => ({ ...prev, status: event.target.value }))
+                      }
+                      className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-primary-strong focus:outline-none"
+                    >
+                      <option value="active">active</option>
+                      <option value="paused">paused</option>
+                      <option value="completed">completed</option>
+                      <option value="rejected">rejected</option>
+                    </select>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleCampaignStatusUpdate}
+                    disabled={isUpdatingCampaign}
+                    className="mt-4 w-full rounded-xl bg-slate-900 text-white text-sm font-semibold py-2 shadow-md transition hover:bg-slate-800 disabled:opacity-60"
+                  >
+                    {isUpdatingCampaign ? "Updating..." : "Update campaign"}
+                  </button>
+                  {campaignStatus && (
+                    <div className="mt-3 text-xs text-emerald-600 font-semibold">{campaignStatus}</div>
+                  )}
+                  {campaignError && (
+                    <div className="mt-3 text-xs text-rose-600 font-semibold">{campaignError}</div>
+                  )}
+                </div>
+              </div>
+            </section>
+            <section id="payouts" className="space-y-4 animate-in fade-in slide-in-from-bottom-2">
+              <div>
+                <h2 className="text-xl font-admin-heading font-semibold text-slate-900 dark:text-white">
+                  Payout management
+                </h2>
+                <p className="text-sm text-slate-600 dark:text-slate-400">
+                  Review pending withdrawals and process payouts quickly.
+                </p>
+              </div>
+
+              <div className="grid gap-4 lg:grid-cols-[1.3fr_1fr]">
+                <div className="rounded-3xl border border-slate-200/80 bg-white p-5 text-slate-900 shadow-[0_24px_60px_-45px_rgba(15,23,42,0.2)] dark:border-white/20 dark:bg-white/95 dark:shadow-[0_30px_70px_-55px_rgba(0,0,0,0.85)]">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm font-semibold text-slate-700">
+                      Withdrawal requests
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => loadWithdrawals(token)}
+                      className="flex items-center gap-1 text-xs font-semibold text-slate-500"
+                    >
+                      <RefreshCw size={12} />
+                      Refresh
+                    </button>
+                  </div>
+                  {isLoadingWithdrawals && (
+                    <div className="mt-3 text-xs text-slate-500">Loading...</div>
+                  )}
+                  {withdrawalsError && (
+                    <div className="mt-3 text-xs text-rose-600 font-semibold">{withdrawalsError}</div>
+                  )}
+                  {limitedWithdrawals.length === 0 && !isLoadingWithdrawals ? (
+                    <div className="mt-3 text-xs text-slate-500">
+                      No withdrawals found.
+                    </div>
+                  ) : (
+                    <div className="mt-4 space-y-3">
+                      {limitedWithdrawals.map((withdrawal) => (
+                        <div
+                          key={withdrawal.id}
+                          className="rounded-2xl border border-slate-200/70 bg-white px-4 py-3 text-xs shadow-sm"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <div className="text-sm font-semibold text-slate-700">
+                                {withdrawal.PayoutMethod?.value ||
+                                  withdrawal.payoutMethod?.value ||
+                                  "UPI payout"}
+                              </div>
+                              <div className="text-[10px] text-slate-400">
+                                {withdrawal.id?.slice(0, 10)} - {formatDate(withdrawal.createdAt)}
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-sm font-semibold text-slate-900">
+                                INR {formatAmount(withdrawal.amount)}
+                              </div>
+                              <div
+                                className={`text-[10px] font-semibold ${getStatusClasses(
+                                  withdrawal.status
+                                )}`}
+                              >
+                                {withdrawal.status}
+                              </div>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setWithdrawalAction((prev) => ({
+                                ...prev,
+                                id: withdrawal.id,
+                              }))
+                            }
+                            className="mt-2 text-[10px] font-semibold text-slate-600"
+                          >
+                            Use in action form
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {withdrawals.length > 6 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowAllWithdrawals((prev) => !prev)}
+                      className="mt-3 text-[10px] font-semibold text-slate-600"
+                    >
+                      {showAllWithdrawals ? "Show less" : "View all"}
+                    </button>
+                  )}
+                </div>
+
+                <div className="rounded-3xl border border-slate-200/80 bg-white p-5 text-slate-900 shadow-[0_24px_60px_-45px_rgba(15,23,42,0.2)] dark:border-white/20 dark:bg-white/95 dark:shadow-[0_30px_70px_-55px_rgba(0,0,0,0.85)]">
+                  <div className="text-sm font-semibold text-slate-700">
+                    Process withdrawal
+                  </div>
+                  <div className="mt-4 space-y-3">
+                    <input
+                      type="text"
+                      value={withdrawalAction.id}
+                      onChange={(event) =>
+                        setWithdrawalAction((prev) => ({ ...prev, id: event.target.value }))
+                      }
+                      placeholder="Withdrawal ID"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-primary-strong focus:outline-none"
+                    />
+                    <select
+                      value={withdrawalAction.status}
+                      onChange={(event) =>
+                        setWithdrawalAction((prev) => ({ ...prev, status: event.target.value }))
+                      }
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-primary-strong focus:outline-none"
+                    >
+                      <option value="processed">processed</option>
+                      <option value="rejected">rejected</option>
+                    </select>
+                    <input
+                      type="text"
+                      value={withdrawalAction.referenceId}
+                      onChange={(event) =>
+                        setWithdrawalAction((prev) => ({
+                          ...prev,
+                          referenceId: event.target.value,
+                        }))
+                      }
+                      placeholder="Reference ID"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-primary-strong focus:outline-none"
+                    />
+                    <input
+                      type="text"
+                      value={withdrawalAction.adminNote}
+                      onChange={(event) =>
+                        setWithdrawalAction((prev) => ({
+                          ...prev,
+                          adminNote: event.target.value,
+                        }))
+                      }
+                      placeholder="Admin note"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-primary-strong focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleWithdrawalProcess}
+                      className="w-full rounded-xl bg-slate-900 text-white text-sm font-semibold py-2 shadow-md transition hover:bg-slate-800"
+                    >
+                      Update withdrawal
+                    </button>
+                    {withdrawalStatus && (
+                      <div className="text-xs text-emerald-600 font-semibold">{withdrawalStatus}</div>
+                    )}
+                    {withdrawalError && (
+                      <div className="text-xs text-rose-600 font-semibold">{withdrawalError}</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section id="users" className="space-y-4 animate-in fade-in slide-in-from-bottom-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-admin-heading font-semibold text-slate-900 dark:text-white">
+                    User management
+                  </h2>
+                  <p className="text-sm text-slate-600 dark:text-slate-400">
+                    Update customer access and monitor registrations.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => loadUsers(token)}
+                  className="flex items-center gap-1 text-xs font-semibold text-slate-500 dark:text-slate-400"
+                >
+                  <RefreshCw size={12} />
+                  Refresh
+                </button>
+              </div>
+              {isLoadingUsers && (
+                <div className="text-xs text-slate-500 dark:text-slate-400">Loading...</div>
+              )}
+              {usersError && <div className="text-xs text-rose-600 font-semibold">{usersError}</div>}
+              {limitedUsers.length === 0 && !isLoadingUsers ? (
+                <div className="text-xs text-slate-500 dark:text-slate-400">No users found.</div>
+              ) : (
+                <div className="grid gap-3 md:grid-cols-2">
+                  {limitedUsers.map((user) => {
+                    const displayName = user.name || user.email || user.phoneNumber || "Customer";
+                    return (
+                      <div
+                        key={user.id}
+                        className="rounded-2xl border border-slate-200/80 bg-white px-4 py-3 text-slate-900 shadow-[0_20px_45px_-35px_rgba(15,23,42,0.18)] dark:border-white/20 dark:bg-white/95 dark:shadow-[0_25px_60px_-50px_rgba(0,0,0,0.85)]"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="text-sm font-semibold text-slate-700">
+                              {displayName}
+                            </div>
+                            <div className="text-[10px] text-slate-400">
+                              {user.email || user.phoneNumber || "No contact"}
+                            </div>
+                          </div>
+                          <div
+                            className={`text-[10px] font-semibold ${getStatusClasses(user.status)}`}
+                          >
+                            {user.status}
+                          </div>
+                        </div>
+                        <div className="mt-3 flex items-center gap-2">
+                          <select
+                            value={userStatusUpdates[user.id] || user.status || "active"}
+                            onChange={(event) =>
+                              setUserStatusUpdates((prev) => ({
+                                ...prev,
+                                [user.id]: event.target.value,
+                              }))
+                            }
+                            className="flex-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700"
+                          >
+                            <option value="active">active</option>
+                            <option value="inactive">inactive</option>
+                            <option value="blocked">blocked</option>
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => handleUserStatusSave(user.id, user.status)}
+                            className="inline-flex items-center gap-1 rounded-lg bg-slate-900 px-2 py-1 text-[10px] font-semibold text-white"
+                          >
+                            Update
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {users.length > 6 && (
+                <button
+                  type="button"
+                  onClick={() => setShowAllUsers((prev) => !prev)}
+                  className="text-[10px] font-semibold text-slate-600 dark:text-slate-300"
+                >
+                  {showAllUsers ? "Show less" : "View all"}
+                </button>
+              )}
+              {userActionStatus && (
+                <div className="text-xs text-emerald-600 font-semibold">{userActionStatus}</div>
+              )}
+              {userActionError && (
+                <div className="text-xs text-rose-600 font-semibold">{userActionError}</div>
+              )}
+            </section>
+            <section id="vendors" className="space-y-4 animate-in fade-in slide-in-from-bottom-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-admin-heading font-semibold text-slate-900 dark:text-white">
+                    Vendor verification
+                  </h2>
+                  <p className="text-sm text-slate-600 dark:text-slate-400">
+                    Approve vendors and manage onboarding statuses.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => loadVendors(token)}
+                  className="flex items-center gap-1 text-xs font-semibold text-slate-500 dark:text-slate-400"
+                >
+                  <RefreshCw size={12} />
+                  Refresh
+                </button>
+              </div>
+              {isLoadingVendors && (
+                <div className="text-xs text-slate-500 dark:text-slate-400">Loading...</div>
+              )}
+              {vendorsError && (
+                <div className="text-xs text-rose-600 font-semibold">{vendorsError}</div>
+              )}
+              {limitedVendors.length === 0 && !isLoadingVendors ? (
+                <div className="text-xs text-slate-500 dark:text-slate-400">No vendors found.</div>
+              ) : (
+                <div className="grid gap-3 md:grid-cols-2">
+                  {limitedVendors.map((vendor) => {
+                    const vendorName = vendor.businessName || vendor.name || "Vendor account";
+                    const vendorEmail = vendor.User?.email || vendor.contactEmail || "No email";
+                    return (
+                      <div
+                        key={vendor.id}
+                        className="rounded-2xl border border-slate-200/80 bg-white px-4 py-3 text-slate-900 shadow-[0_20px_45px_-35px_rgba(15,23,42,0.18)] dark:border-white/20 dark:bg-white/95 dark:shadow-[0_25px_60px_-50px_rgba(0,0,0,0.85)]"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="text-sm font-semibold text-slate-700">
+                              {vendorName}
+                            </div>
+                            <div className="text-[10px] text-slate-400">
+                              {vendorEmail}
+                            </div>
+                          </div>
+                          <div
+                            className={`text-[10px] font-semibold ${getStatusClasses(
+                              vendor.status
+                            )}`}
+                          >
+                            {vendor.status}
+                          </div>
+                        </div>
+                        <div className="mt-3 flex items-center gap-2">
+                          <select
+                            value={vendorStatusUpdates[vendor.id] || vendor.status || "pending"}
+                            onChange={(event) =>
+                              setVendorStatusUpdates((prev) => ({
+                                ...prev,
+                                [vendor.id]: event.target.value,
+                              }))
+                            }
+                            className="flex-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700"
+                          >
+                            <option value="active">active</option>
+                            <option value="pending">pending</option>
+                            <option value="inactive">inactive</option>
+                            <option value="rejected">rejected</option>
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => handleVendorStatusSave(vendor.id, vendor.status)}
+                            className="inline-flex items-center gap-1 rounded-lg bg-slate-900 px-2 py-1 text-[10px] font-semibold text-white"
+                          >
+                            Update
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {vendors.length > 6 && (
+                <button
+                  type="button"
+                  onClick={() => setShowAllVendors((prev) => !prev)}
+                  className="text-[10px] font-semibold text-slate-600 dark:text-slate-300"
+                >
+                  {showAllVendors ? "Show less" : "View all"}
+                </button>
+              )}
+              {vendorActionStatus && (
+                <div className="text-xs text-emerald-600 font-semibold">{vendorActionStatus}</div>
+              )}
+              {vendorActionError && (
+                <div className="text-xs text-rose-600 font-semibold">{vendorActionError}</div>
+              )}
+            </section>
+
+            <section
+              id="transactions"
+              className="space-y-4 animate-in fade-in slide-in-from-bottom-2"
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-admin-heading font-semibold text-slate-900 dark:text-white">
+                    System transactions
+                  </h2>
+                  <p className="text-sm text-slate-600 dark:text-slate-400">
+                    Global movement across wallets, payouts, and QR purchases.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => loadTransactions(token)}
+                  className="flex items-center gap-1 text-xs font-semibold text-slate-500 dark:text-slate-400"
+                >
+                  <RefreshCw size={12} />
+                  Refresh
+                </button>
+              </div>
+              {isLoadingTransactions && (
+                <div className="text-xs text-slate-500 dark:text-slate-400">Loading...</div>
+              )}
+              {transactionsError && (
+                <div className="text-xs text-rose-600 font-semibold">{transactionsError}</div>
+              )}
+              {limitedTransactions.length === 0 && !isLoadingTransactions ? (
+                <div className="text-xs text-slate-500 dark:text-slate-400">
+                  No transactions available.
+                </div>
+              ) : (
+                <div className="grid gap-3 md:grid-cols-2">
+                  {limitedTransactions.map((tx) => (
+                    <div
+                      key={tx.id}
+                      className="rounded-2xl border border-slate-200/80 bg-white px-4 py-3 text-slate-900 shadow-[0_20px_45px_-35px_rgba(15,23,42,0.18)] dark:border-white/20 dark:bg-white/95 dark:shadow-[0_25px_60px_-50px_rgba(0,0,0,0.85)]"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="text-sm font-semibold text-slate-700">
+                            {tx.category?.replace(/_/g, " ") || "Transaction"}
+                          </div>
+                          <div className="text-[10px] text-slate-400">
+                            {formatDate(tx.createdAt)}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-sm font-semibold text-slate-900">
+                            {tx.type === "debit" ? "-" : "+"}INR {formatAmount(tx.amount)}
+                          </div>
+                          <div
+                            className={`text-[10px] font-semibold ${getStatusClasses(tx.status)}`}
+                          >
+                            {tx.status}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {transactions.length > 8 && (
+                <button
+                  type="button"
+                  onClick={() => setShowAllTransactions((prev) => !prev)}
+                  className="text-[10px] font-semibold text-slate-600 dark:text-slate-300"
+                >
+                  {showAllTransactions ? "Show less" : "View all"}
+                </button>
+              )}
+            </section>
+
+            <section id="qrs" className="space-y-4 animate-in fade-in slide-in-from-bottom-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-admin-heading font-semibold text-slate-900 dark:text-white">
+                    Global QR registry
+                  </h2>
+                  <p className="text-sm text-slate-600 dark:text-slate-400">
+                    Track generated QR codes across all campaigns.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => loadQrs(token)}
+                  className="flex items-center gap-1 text-xs font-semibold text-slate-500 dark:text-slate-400"
+                >
+                  <RefreshCw size={12} />
+                  Refresh
+                </button>
+              </div>
+              {isLoadingQrs && (
+                <div className="text-xs text-slate-500 dark:text-slate-400">Loading...</div>
+              )}
+              {qrsError && <div className="text-xs text-rose-600 font-semibold">{qrsError}</div>}
+              {limitedQrs.length === 0 && !isLoadingQrs ? (
+                <div className="text-xs text-slate-500 dark:text-slate-400">No QR codes yet.</div>
+              ) : (
+                <div className="grid gap-3 md:grid-cols-2">
+                  {limitedQrs.map((qr) => (
+                    <div
+                      key={qr.id}
+                      className="rounded-2xl border border-slate-200/80 bg-white px-4 py-3 text-slate-900 shadow-[0_20px_45px_-35px_rgba(15,23,42,0.18)] dark:border-white/20 dark:bg-white/95 dark:shadow-[0_25px_60px_-50px_rgba(0,0,0,0.85)]"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="text-sm font-semibold text-slate-700">
+                            {qr.uniqueHash?.slice(0, 12)}...
+                          </div>
+                          <div className="text-[10px] text-slate-400">
+                            {formatDate(qr.createdAt)}
+                          </div>
+                        </div>
+                        <div
+                          className={`text-[10px] font-semibold ${getStatusClasses(qr.status)}`}
+                        >
+                          {qr.status}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {qrs.length > 8 && (
+                <button
+                  type="button"
+                  onClick={() => setShowAllQrs((prev) => !prev)}
+                  className="text-[10px] font-semibold text-slate-600 dark:text-slate-300"
+                >
+                  {showAllQrs ? "Show less" : "View all"}
+                </button>
+              )}
+            </section>
+          </div >
+        </main >
+      </div >
+    </div >
+  );
+};
+
+export default AdminDashboard;
+
+
+

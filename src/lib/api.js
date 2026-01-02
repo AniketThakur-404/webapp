@@ -34,6 +34,13 @@ export const getMe = (token) =>
     token,
   });
 
+export const updateUserProfile = (token, payload) =>
+  apiRequest("/api/user/profile", {
+    method: "PUT",
+    token,
+    body: payload,
+  });
+
 export const getVendorWallet = (token) =>
   apiRequest("/api/vendor/wallet", {
     token,
@@ -93,6 +100,71 @@ export const getVendorCampaigns = (token) =>
 export const createVendorCampaign = (token, payload) =>
   apiRequest("/api/vendor/campaigns", {
     method: "POST",
+    token,
+    body: payload,
+  });
+
+export const getAdminDashboard = (token) =>
+  apiRequest("/api/admin/dashboard", {
+    token,
+  });
+
+export const getAdminUsers = (token) =>
+  apiRequest("/api/admin/users", {
+    token,
+  });
+
+export const updateAdminUserStatus = (token, userId, status) =>
+  apiRequest(`/api/admin/users/${userId}/status`, {
+    method: "PUT",
+    token,
+    body: { status },
+  });
+
+export const getAdminVendors = (token) =>
+  apiRequest("/api/admin/vendors", {
+    token,
+  });
+
+export const updateAdminVendorStatus = (token, vendorId, status) =>
+  apiRequest(`/api/admin/vendors/${vendorId}/verify`, {
+    method: "PUT",
+    token,
+    body: { status },
+  });
+
+export const creditVendorWalletAdmin = (token, payload) =>
+  apiRequest("/api/admin/wallets/credit", {
+    method: "POST",
+    token,
+    body: payload,
+  });
+
+export const updateAdminCampaignStatus = (token, campaignId, status) =>
+  apiRequest(`/api/admin/campaigns/${campaignId}/status`, {
+    method: "PUT",
+    token,
+    body: { status },
+  });
+
+export const getAdminTransactions = (token) =>
+  apiRequest("/api/admin/transactions", {
+    token,
+  });
+
+export const getAdminQrs = (token) =>
+  apiRequest("/api/admin/qrs", {
+    token,
+  });
+
+export const getAdminWithdrawals = (token) =>
+  apiRequest("/api/admin/withdrawals", {
+    token,
+  });
+
+export const processAdminWithdrawal = (token, withdrawalId, payload) =>
+  apiRequest(`/api/admin/withdrawals/${withdrawalId}/process`, {
+    method: "PUT",
     token,
     body: payload,
   });

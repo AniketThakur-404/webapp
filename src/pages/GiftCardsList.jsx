@@ -19,7 +19,7 @@ const GiftCardsList = () => {
   }, [categoryId, query]);
 
   return (
-    <div className="bg-blue-50/70 dark:bg-zinc-950 min-h-full pb-24 transition-colors duration-300">
+    <div className="bg-primary/10 dark:bg-zinc-950 min-h-full pb-24 transition-colors duration-300">
       <div className="px-4 mt-4 space-y-4">
         <div className="relative">
           <Search
@@ -31,11 +31,11 @@ const GiftCardsList = () => {
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search Giftcard"
-            className="w-full bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-full py-3 pl-10 pr-12 text-sm text-gray-700 dark:text-gray-200 outline-none focus:ring-2 focus:ring-blue-500/20"
+            className="w-full bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-full py-3 pl-10 pr-12 text-sm text-gray-700 dark:text-gray-200 outline-none focus:ring-2 focus:ring-primary/30"
           />
           <button
             type="button"
-            className="absolute right-2 top-1/2 -translate-y-1/2 bg-blue-600 text-white rounded-full w-8 h-8 flex items-center justify-center shadow-md"
+            className="absolute right-2 top-1/2 -translate-y-1/2 bg-primary text-white rounded-full w-8 h-8 flex items-center justify-center shadow-md"
           >
             <Search size={14} />
           </button>

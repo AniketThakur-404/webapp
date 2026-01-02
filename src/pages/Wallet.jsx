@@ -1,8 +1,14 @@
 import React, { useEffect, useState } from "react";
 import { BadgeCheck, LogOut, Scan, ShieldCheck } from "lucide-react";
-import { getUserDashboard, scanQr, sendOtp, verifyOtp } from "../lib/api";
-
-const TOKEN_KEY = "cashback_auth_token";
+import {
+  getUserDashboard,
+  scanQr,
+  sendOtp,
+  verifyOtp,
+  getMe,
+  updateUserProfile,
+} from "../lib/api";
+import { AUTH_TOKEN_KEY, clearAuthToken, storeAuthToken } from "../lib/auth";
 
 const formatAmount = (value) => {
   if (value === undefined || value === null) return "0.00";
@@ -12,7 +18,7 @@ const formatAmount = (value) => {
 };
 
 const Wallet = () => {
-  const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY));
+  const [token, setToken] = useState(() => localStorage.getItem(AUTH_TOKEN_KEY));
   const [phoneNumber, setPhoneNumber] = useState("");
   const [otp, setOtp] = useState("");
   const [otpSent, setOtpSent] = useState(false);
@@ -23,6 +29,11 @@ const Wallet = () => {
   const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
   const [isLoadingDashboard, setIsLoadingDashboard] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
+  const [profile, setProfile] = useState({ name: "", email: "", phoneNumber: "" });
+  const [isLoadingProfile, setIsLoadingProfile] = useState(false);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [profileError, setProfileError] = useState("");
+  const [profileSuccess, setProfileSuccess] = useState("");
   const [dashboard, setDashboard] = useState(null);
   const [scanHash, setScanHash] = useState("");
   const [scanMessage, setScanMessage] = useState("");
@@ -38,7 +49,7 @@ const Wallet = () => {
       setDashboard(data);
     } catch (err) {
       if (err.status === 401) {
-        localStorage.removeItem(TOKEN_KEY);
+        clearAuthToken();
         setToken(null);
       }
       setError(err.message || "Unable to load wallet.");
@@ -50,8 +61,31 @@ const Wallet = () => {
   useEffect(() => {
     if (token) {
       loadDashboard(token);
+      loadUserProfile(token);
     }
   }, [token]);
+
+  const loadUserProfile = async (authToken) => {
+    if (!authToken) return;
+    setIsLoadingProfile(true);
+    setProfileError("");
+    try {
+      const data = await getMe(authToken);
+      setProfile({
+        name: data.name || "",
+        email: data.email || "",
+        phoneNumber: data.phoneNumber || "",
+      });
+    } catch (err) {
+      if (err.status === 401) {
+        clearAuthToken();
+        setToken(null);
+      }
+      setProfileError(err.message || "Unable to load profile.");
+    } finally {
+      setIsLoadingProfile(false);
+    }
+  };
 
   const handleSendOtp = async () => {
     if (!phoneNumber.trim()) {
@@ -86,7 +120,7 @@ const Wallet = () => {
     setIsVerifyingOtp(true);
     try {
       const data = await verifyOtp(phoneNumber.trim(), otp.trim());
-      localStorage.setItem(TOKEN_KEY, data.token);
+      storeAuthToken(data.token);
       setToken(data.token);
       setOtp("");
       setOtpSent(false);
@@ -99,11 +133,43 @@ const Wallet = () => {
   };
 
   const handleSignOut = () => {
-    localStorage.removeItem(TOKEN_KEY);
+    clearAuthToken();
     setToken(null);
     setDashboard(null);
     setStatus("Signed out.");
     setScanMessage("");
+    setProfile({ name: "", email: "", phoneNumber: "" });
+    setProfileError("");
+    setProfileSuccess("");
+  };
+
+  const handleProfileSave = async () => {
+    if (!profile.name.trim() || !profile.email.trim()) {
+      setProfileError("Name and email are required.");
+      return;
+    }
+    if (!token) return;
+    setProfileError("");
+    setProfileSuccess("");
+    setIsSavingProfile(true);
+    try {
+      const data = await updateUserProfile(token, {
+        name: profile.name.trim(),
+        email: profile.email.trim(),
+      });
+      if (data?.user) {
+        setProfile((prev) => ({
+          ...prev,
+          name: data.user.name || prev.name,
+          email: data.user.email || prev.email,
+        }));
+      }
+      setProfileSuccess("Profile saved.");
+    } catch (err) {
+      setProfileError(err.message || "Unable to update profile.");
+    } finally {
+      setIsSavingProfile(false);
+    }
   };
 
   const handleScan = async () => {
@@ -129,11 +195,11 @@ const Wallet = () => {
   const transactions = dashboard?.recentTransactions || [];
 
   return (
-    <div className="p-4 pb-20 space-y-4 bg-blue-50/70 dark:bg-zinc-950 min-h-full transition-colors duration-300">
+    <div className="p-4 pb-20 space-y-4 bg-primary/10 dark:bg-zinc-950 min-h-full transition-colors duration-300">
       {!isAuthenticated && (
         <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-100 dark:border-zinc-800 p-4 shadow-sm space-y-3">
           <div className="flex items-center gap-2 text-sm font-semibold text-gray-800 dark:text-gray-200">
-            <ShieldCheck size={16} className="text-blue-600" />
+            <ShieldCheck size={16} className="text-primary-strong" />
             Sign in to view vCash
           </div>
           <div className="space-y-2">
@@ -151,7 +217,7 @@ const Wallet = () => {
               type="button"
               onClick={handleSendOtp}
               disabled={isSendingOtp}
-              className="w-full rounded-xl bg-blue-600 text-white text-sm font-semibold py-2 shadow-md disabled:opacity-60"
+              className="w-full rounded-xl bg-primary text-white text-sm font-semibold py-2 shadow-md disabled:opacity-60"
             >
               {isSendingOtp ? "Sending..." : "Send OTP"}
             </button>
@@ -181,7 +247,7 @@ const Wallet = () => {
           )}
 
           {otpHint && (
-            <div className="text-xs text-blue-600 font-semibold">{otpHint}</div>
+            <div className="text-xs text-primary-strong font-semibold">{otpHint}</div>
           )}
 
           {status && (
@@ -208,8 +274,8 @@ const Wallet = () => {
               </button>
             </div>
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-full bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center">
-                <BadgeCheck size={20} className="text-blue-600 dark:text-blue-300" />
+              <div className="w-12 h-12 rounded-full bg-primary/15 dark:bg-primary-strong/40 flex items-center justify-center">
+                <BadgeCheck size={20} className="text-primary-strong dark:text-primary" />
               </div>
               <div>
                 <div className="text-xs text-gray-500 dark:text-gray-400">Balance</div>
@@ -228,8 +294,54 @@ const Wallet = () => {
           </div>
 
           <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-100 dark:border-zinc-800 p-4 shadow-sm space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+                Profile
+              </div>
+              <span className="text-[11px] text-gray-500 dark:text-gray-400">
+                {isLoadingProfile ? "Loading..." : "Personal info"}
+              </span>
+            </div>
+            <div className="grid gap-3">
+              <label className="text-xs text-gray-500 dark:text-gray-400">Full Name</label>
+              <input
+                type="text"
+                value={profile.name}
+                onChange={(event) => setProfile({ ...profile, name: event.target.value })}
+                placeholder="Full name"
+                className="w-full rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-gray-900 dark:text-gray-100"
+              />
+              <label className="text-xs text-gray-500 dark:text-gray-400">Email Address</label>
+              <input
+                type="email"
+                value={profile.email}
+                onChange={(event) => setProfile({ ...profile, email: event.target.value })}
+                placeholder="Email"
+                className="w-full rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-gray-900 dark:text-gray-100"
+              />
+              <div className="text-xs text-gray-500 dark:text-gray-400">
+                Phone: {profile.phoneNumber || "Not available"}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleProfileSave}
+              disabled={isSavingProfile}
+              className="w-full rounded-xl bg-primary text-white text-sm font-semibold py-2 shadow-md disabled:opacity-60"
+            >
+              {isSavingProfile ? "Saving..." : "Save Profile"}
+            </button>
+            {profileSuccess && (
+              <div className="text-xs text-green-600 font-semibold">{profileSuccess}</div>
+            )}
+            {profileError && (
+              <div className="text-xs text-red-600 font-semibold">{profileError}</div>
+            )}
+          </div>
+
+          <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-100 dark:border-zinc-800 p-4 shadow-sm space-y-3">
             <div className="flex items-center gap-2 text-sm font-semibold text-gray-800 dark:text-gray-200">
-              <Scan size={16} className="text-blue-600" />
+              <Scan size={16} className="text-primary-strong" />
               Scan and redeem
             </div>
             <input
@@ -243,7 +355,7 @@ const Wallet = () => {
               type="button"
               onClick={handleScan}
               disabled={isScanning}
-              className="w-full rounded-xl bg-blue-600 text-white text-sm font-semibold py-2 shadow-md disabled:opacity-60"
+              className="w-full rounded-xl bg-primary text-white text-sm font-semibold py-2 shadow-md disabled:opacity-60"
             >
               {isScanning ? "Redeeming..." : "Redeem QR"}
             </button>

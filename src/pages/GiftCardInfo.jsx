@@ -34,7 +34,7 @@ const GiftCardInfo = () => {
   ];
 
   return (
-    <div className="bg-blue-50/70 dark:bg-zinc-950 min-h-full pb-24 transition-colors duration-300">
+    <div className="bg-primary/10 dark:bg-zinc-950 min-h-full pb-24 transition-colors duration-300">
       <div className="px-4 mt-4 space-y-4">
         <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-100 dark:border-zinc-800 p-4 shadow-sm flex items-center gap-3">
           <FallbackImage
@@ -59,7 +59,7 @@ const GiftCardInfo = () => {
             value={amount}
             onChange={(event) => setAmount(event.target.value)}
             placeholder="Enter amount"
-            className="w-full border border-gray-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-gray-900 dark:text-gray-100 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+            className="w-full border border-gray-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-gray-900 dark:text-gray-100 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
           />
           <div className="text-[11px] text-gray-500 dark:text-gray-400">
             Min: Rs {minText} & Max: Rs {maxText}
@@ -71,7 +71,7 @@ const GiftCardInfo = () => {
                 key={value}
                 type="button"
                 onClick={() => setAmount(String(value))}
-                className="text-xs font-semibold bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 dark:text-gray-300 rounded-full py-2 hover:border-blue-400 hover:text-blue-700 dark:hover:text-blue-400 transition-colors"
+                className="text-xs font-semibold bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 dark:text-gray-300 rounded-full py-2 hover:border-primary-strong hover:text-primary-strong dark:hover:text-primary transition-colors"
               >
                 Rs {value}
               </button>
@@ -95,7 +95,7 @@ const GiftCardInfo = () => {
           </div>
         </div>
 
-        <details className="bg-blue-100/70 dark:bg-blue-900/20 rounded-2xl border border-blue-100 dark:border-blue-900/30 shadow-sm">
+        <details className="bg-primary/15 dark:bg-primary-strong/20 rounded-2xl border border-primary/20 dark:border-primary-strong/30 shadow-sm">
           <summary className="cursor-pointer list-none px-4 py-3 text-xs font-semibold text-gray-700 dark:text-gray-200">
             Description
           </summary>
@@ -104,7 +104,7 @@ const GiftCardInfo = () => {
           </div>
         </details>
 
-        <details className="bg-blue-100/70 dark:bg-blue-900/20 rounded-2xl border border-blue-100 dark:border-blue-900/30 shadow-sm mb-4">
+        <details className="bg-primary/15 dark:bg-primary-strong/20 rounded-2xl border border-primary/20 dark:border-primary-strong/30 shadow-sm mb-4">
           <summary className="cursor-pointer list-none px-4 py-3 text-xs font-semibold text-gray-700 dark:text-gray-200">
             Terms and Conditions
           </summary>
@@ -117,7 +117,7 @@ const GiftCardInfo = () => {
 
         <HowItWorks />
 
-        <button className="w-full bg-blue-600 text-white py-3 rounded-2xl font-semibold shadow-lg shadow-blue-200 dark:shadow-none">
+        <button className="w-full bg-primary text-white py-3 rounded-2xl font-semibold shadow-lg shadow-primary/30 dark:shadow-none">
           Buy Now
         </button>
       </div>

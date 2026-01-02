@@ -40,7 +40,7 @@ export function ModeToggle() {
                 <div className="absolute right-0 top-full mt-2 w-32 rounded-md border border-gray-200 dark:border-gray-800 bg-white dark:bg-zinc-950 shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none z-50 animate-in fade-in zoom-in-95 duration-200 p-1">
                     <button
                         onClick={() => handleSetTheme("light")}
-                        className={`relative flex w-full cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors hover:bg-gray-100 dark:hover:bg-zinc-800 ${theme === 'light' ? 'text-blue-600 dark:text-blue-400 font-medium' : 'text-gray-700 dark:text-gray-200'}`}
+                        className={`relative flex w-full cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors hover:bg-gray-100 dark:hover:bg-zinc-800 ${theme === 'light' ? 'text-primary-strong dark:text-primary font-medium' : 'text-gray-700 dark:text-gray-200'}`}
                     >
                         <Sun className="mr-2 h-4 w-4" />
                         <span>Light</span>
@@ -48,7 +48,7 @@ export function ModeToggle() {
                     </button>
                     <button
                         onClick={() => handleSetTheme("dark")}
-                        className={`relative flex w-full cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors hover:bg-gray-100 dark:hover:bg-zinc-800 ${theme === 'dark' ? 'text-blue-600 dark:text-blue-400 font-medium' : 'text-gray-700 dark:text-gray-200'}`}
+                        className={`relative flex w-full cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors hover:bg-gray-100 dark:hover:bg-zinc-800 ${theme === 'dark' ? 'text-primary-strong dark:text-primary font-medium' : 'text-gray-700 dark:text-gray-200'}`}
                     >
                         <Moon className="mr-2 h-4 w-4" />
                         <span>Dark</span>
@@ -56,7 +56,7 @@ export function ModeToggle() {
                     </button>
                     <button
                         onClick={() => handleSetTheme("system")}
-                        className={`relative flex w-full cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors hover:bg-gray-100 dark:hover:bg-zinc-800 ${theme === 'system' ? 'text-blue-600 dark:text-blue-400 font-medium' : 'text-gray-700 dark:text-gray-200'}`}
+                        className={`relative flex w-full cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors hover:bg-gray-100 dark:hover:bg-zinc-800 ${theme === 'system' ? 'text-primary-strong dark:text-primary font-medium' : 'text-gray-700 dark:text-gray-200'}`}
                     >
                         <Laptop className="mr-2 h-4 w-4" />
                         <span>System</span>

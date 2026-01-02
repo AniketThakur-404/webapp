@@ -11,7 +11,7 @@ import HowItWorks from '../components/HowItWorks';
 // Mock Data
 const heroBanners = [
     { id: 1, title: "Get Upto ₹15000 on Scanning Products", subtitle: "From Double Tiger Tea", bg: "bg-teal-900", img: "https://via.placeholder.com/100" },
-    { id: 2, title: "Win Gold Coins Daily", subtitle: "Scan Heritage Milk Packs", bg: "bg-blue-900", img: "https://via.placeholder.com/100" },
+    { id: 2, title: "Win Gold Coins Daily", subtitle: "Scan Heritage Milk Packs", bg: "bg-primary-strong", img: "https://via.placeholder.com/100" },
     { id: 3, title: "Cashback Bonanza", subtitle: "Valid on all electronic items", bg: "bg-purple-900", img: "https://via.placeholder.com/100" },
 ];
 
@@ -22,10 +22,10 @@ const stats = [
 ];
 
 const quickActions = [
-    { icon: <Scan size={24} />, label: "Scan & Incentify Online", color: "bg-blue-600" },
-    { icon: <Clock size={24} />, label: "Product History", color: "bg-blue-600" },
-    { icon: <Gift size={24} />, label: "Rewards History", color: "bg-blue-600" },
-    { icon: <FileText size={24} />, label: "Product Reports", color: "bg-blue-600" },
+    { icon: <Scan size={24} />, label: "Scan & Incentify Online", color: "bg-primary" },
+    { icon: <Clock size={24} />, label: "Product History", color: "bg-primary" },
+    { icon: <Gift size={24} />, label: "Rewards History", color: "bg-primary" },
+    { icon: <FileText size={24} />, label: "Product Reports", color: "bg-primary" },
 ];
 
 const brands = brandCatalog;
@@ -88,7 +88,7 @@ const HeroCarousel = () => {
 
 const Home = () => {
     return (
-        <div className="p-4 pb-20 space-y-6 bg-blue-50/50 dark:bg-zinc-950 min-h-full transition-colors duration-300">
+        <div className="p-4 pb-20 space-y-6 bg-primary/10 dark:bg-zinc-950 min-h-full transition-colors duration-300">
 
             {/* 1. Hero Carousel with Auto-Scroll */}
             <section>
@@ -96,11 +96,11 @@ const Home = () => {
             </section>
 
             {/* 2. Quick Actions */}
-            <section className="bg-white dark:bg-zinc-900 p-4 rounded-xl shadow-sm dark:shadow-zinc-900 border border-blue-50 dark:border-zinc-800 transition-colors duration-300">
+            <section className="bg-white dark:bg-zinc-900 p-4 rounded-xl shadow-sm dark:shadow-zinc-900 border border-primary/20 dark:border-zinc-800 transition-colors duration-300">
                 <div className="grid grid-cols-4 gap-2">
                     {quickActions.map((action, idx) => (
                         <div key={idx} className="flex flex-col items-center gap-2 text-center">
-                            <div className={`${action.color} w-12 h-12 rounded-xl flex items-center justify-center text-white shadow-md shadow-blue-200`}>
+                            <div className={`${action.color} w-12 h-12 rounded-xl flex items-center justify-center text-white shadow-md shadow-primary/30`}>
                                 {action.icon}
                             </div>
                             <span className="text-[10px] font-bold text-gray-700 dark:text-gray-300 leading-tight">{action.label}</span>
@@ -115,7 +115,7 @@ const Home = () => {
                     <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Incentify Online Brands</h2>
                     <Link
                         to="/brand-details"
-                        className="text-[10px] text-blue-600 font-bold flex items-center gap-0.5"
+                        className="text-[10px] text-primary-strong font-bold flex items-center gap-0.5"
                     >
                         View more <ChevronRight size={12} />
                     </Link>
@@ -155,7 +155,7 @@ const Home = () => {
             <section>
                 <div className="flex justify-between items-center mb-3 px-1">
                     <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Incentify Online Scan Offers</h2>
-                    <Link to="/product-info" className="text-[10px] text-blue-600 font-bold">
+                    <Link to="/product-info" className="text-[10px] text-primary-strong font-bold">
                         View more
                     </Link>
                 </div>
@@ -180,10 +180,10 @@ const Home = () => {
             <section className="bg-white dark:bg-zinc-900 p-4 rounded-xl space-y-4 shadow-sm dark:shadow-zinc-900 transition-colors duration-300">
                 <div className="flex justify-between items-center">
                     <h2 className="text-xs font-bold text-gray-500 uppercase">Warranty</h2>
-                    <span className="text-[10px] text-blue-600 font-bold">View more</span>
+                    <span className="text-[10px] text-primary-strong font-bold">View more</span>
                 </div>
 
-                <div className="w-full bg-blue-500 text-white py-3 rounded-lg text-center font-bold text-sm shadow-md shadow-blue-200">
+                <div className="w-full bg-primary text-white py-3 rounded-lg text-center font-bold text-sm shadow-md shadow-primary/30">
                     + REGISTER
                 </div>
 

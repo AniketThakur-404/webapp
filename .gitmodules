@@ -1,3 +1,4 @@
 [submodule "cashback backend/cashback"]
 	path = cashback backend/cashback
 	url = https://github.com/gohypedevelopers-stack/cashback.git
+	ignore = dirty

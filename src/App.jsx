@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Outlet } from 'react-router-dom';
 import Layout from './components/Layout';
 import Home from './pages/Home';
 import GiftCards from './pages/GiftCards';
@@ -10,14 +10,22 @@ import ProductInfo from './pages/ProductInfo';
 import LiquidGlassDemo from './pages/LiquidGlassDemo';
 import Wallet from './pages/Wallet';
 import VendorDashboard from './pages/VendorDashboard';
+import AdminDashboard from './pages/AdminDashboard';
 import { ThemeProvider } from './components/ThemeProvider';
 
 function App() {
+  const AppLayout = () => (
+    <Layout>
+      <Outlet />
+    </Layout>
+  );
+
   return (
     <ThemeProvider defaultTheme="system" storageKey="vite-ui-theme">
       <BrowserRouter>
-        <Layout>
-          <Routes>
+        <Routes>
+          <Route path="/admin" element={<AdminDashboard />} />
+          <Route element={<AppLayout />}>
             <Route path="/" element={<Home />} />
             <Route path="/gift-cards" element={<GiftCards />} />
             <Route path="/gift-cards-list" element={<GiftCardsList />} />
@@ -31,8 +39,8 @@ function App() {
             <Route path="/product-info" element={<ProductInfo />} />
             <Route path="/product-info/:id" element={<ProductInfo />} />
             <Route path="/liquid-glass" element={<LiquidGlassDemo />} />
-          </Routes>
-        </Layout>
+          </Route>
+        </Routes>
       </BrowserRouter>
     </ThemeProvider>
   );

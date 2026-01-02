@@ -59,7 +59,7 @@ const BrandDetails = () => {
       : brandCatalog[0];
 
   return (
-    <div className="bg-blue-50/70 dark:bg-zinc-950 min-h-full pb-24 transition-colors duration-300">
+    <div className="bg-primary/10 dark:bg-zinc-950 min-h-full pb-24 transition-colors duration-300">
       <div className="px-4 mt-4 space-y-4">
         <div className="rounded-2xl overflow-hidden bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 shadow-sm transition-colors duration-300">
           <FallbackImage
@@ -78,17 +78,17 @@ const BrandDetails = () => {
               </div>
               <button
                 type="button"
-                className="shrink-0 bg-blue-600 text-white text-[11px] font-semibold px-3 py-2 rounded-full flex items-center gap-1 shadow-sm"
+                className="shrink-0 bg-primary text-white text-[11px] font-semibold px-3 py-2 rounded-full flex items-center gap-1 shadow-sm"
               >
                 <MessageCircle size={14} />
                 Talk to Brand
               </button>
             </div>
 
-            <div className="flex flex-wrap gap-3 text-[11px] text-blue-600">
+            <div className="flex flex-wrap gap-3 text-[11px] text-primary-strong">
               <a
                 href={`mailto:${displayBrand.email}`}
-                className="inline-flex items-center gap-1 hover:text-blue-700"
+                className="inline-flex items-center gap-1 hover:text-primary-strong"
               >
                 <Mail size={12} />
                 {displayBrand.email}
@@ -97,7 +97,7 @@ const BrandDetails = () => {
                 href={displayBrand.website}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center gap-1 hover:text-blue-700"
+                className="inline-flex items-center gap-1 hover:text-primary-strong"
               >
                 <Globe size={12} />
                 Brand Website
@@ -110,7 +110,7 @@ const BrandDetails = () => {
               {displayBrand.tags.map((tag) => (
                 <span
                   key={tag}
-                  className="text-[10px] font-semibold text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2 py-1 rounded-full border border-blue-100 dark:border-blue-900/30"
+                  className="text-[10px] font-semibold text-primary-strong dark:text-primary bg-primary/10 dark:bg-primary-strong/30 px-2 py-1 rounded-full border border-primary/20 dark:border-primary-strong/30"
                 >
                   {tag}
                 </span>
@@ -129,11 +129,11 @@ const BrandDetails = () => {
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search Product"
-            className="w-full bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-full py-3 pl-10 pr-12 text-sm text-gray-700 dark:text-gray-200 outline-none focus:ring-2 focus:ring-blue-500/20"
+            className="w-full bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-full py-3 pl-10 pr-12 text-sm text-gray-700 dark:text-gray-200 outline-none focus:ring-2 focus:ring-primary/30"
           />
           <button
             type="button"
-            className="absolute right-2 top-1/2 -translate-y-1/2 bg-blue-600 text-white rounded-full w-8 h-8 flex items-center justify-center shadow-md"
+            className="absolute right-2 top-1/2 -translate-y-1/2 bg-primary text-white rounded-full w-8 h-8 flex items-center justify-center shadow-md"
           >
             <Search size={14} />
           </button>
@@ -146,7 +146,7 @@ const BrandDetails = () => {
               type="button"
               onClick={() => setActiveCategory(category)}
               className={`px-4 py-2 rounded-full text-[11px] font-semibold border transition-colors ${activeCategory === category
-                ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                ? 'bg-primary text-white border-primary shadow-sm'
                 : 'bg-white dark:bg-zinc-900 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-zinc-800 hover:bg-gray-50 dark:hover:bg-zinc-800'
                 }`}
             >
@@ -170,7 +170,7 @@ const BrandDetails = () => {
                 <FallbackImage
                   src={product.image}
                   alt={product.name}
-                  className="w-12 h-12 object-contain rounded-lg bg-blue-50 dark:bg-zinc-800"
+                  className="w-12 h-12 object-contain rounded-lg bg-primary/10 dark:bg-zinc-800"
                 />
                 <div className="flex-1">
                   <div className="text-sm font-semibold text-gray-800 dark:text-gray-200">{product.name}</div>

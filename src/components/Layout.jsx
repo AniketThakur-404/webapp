@@ -1,9 +1,12 @@
 import React, { useEffect, useRef } from 'react';
-import { ChevronLeft, Gift, Home, Store, User, Wallet } from 'lucide-react';
+import { ChevronLeft, Gift, Home, Store, Wallet } from 'lucide-react';
 import { ModeToggle } from './ModeToggle';
-import { Link, useLocation, useMatch, useNavigate } from 'react-router-dom';
+import { LiquidButton } from './ui/LiquidGlassButton';
+import { useLocation, useMatch, useNavigate } from 'react-router-dom';
 import { giftCardCategories, giftCards } from '../data/giftcards';
 import LiquidDock from './LiquidDock';
+import { useTheme } from './ThemeProvider';
+import UserProfileMenu from './UserProfileMenu';
 
 const Layout = ({ children }) => {
     const mainRef = useRef(null);
@@ -30,6 +33,7 @@ const Layout = ({ children }) => {
         if (location.pathname.startsWith('/gift-cards')) return 'Gift Card';
         if (location.pathname.startsWith('/wallet')) return 'vCash';
         if (location.pathname.startsWith('/vendor-dashboard')) return 'Vendor Dashboard';
+        if (location.pathname.startsWith('/admin')) return 'Admin Console';
         if (location.pathname.startsWith('/brand-details')) return 'Brand Details';
         if (location.pathname.startsWith('/product-info')) return 'Product Info';
         return 'Incentify Online';
@@ -41,6 +45,12 @@ const Layout = ({ children }) => {
         }
     }, [location.pathname]);
 
+    const { effectiveTheme } = useTheme();
+    const logoSrc =
+        effectiveTheme === 'dark'
+            ? '/dark theme incentify logo.png'
+            : '/light theme incentify logo.png';
+
     return (
         <div className="min-h-screen bg-gray-100 flex justify-center">
             {/* Mobile Container - limits width on desktop to look like a phone */}
@@ -48,46 +58,49 @@ const Layout = ({ children }) => {
 
                 {/* TOP HEADER */}
                 <header
-                    className={`bg-white dark:bg-zinc-950/80 backdrop-blur-md px-4 py-[16px] sticky top-0 z-50 shadow-sm dark:shadow-zinc-900 border-b border-transparent dark:border-zinc-800 flex items-center transition-colors duration-300 ${isHome ? 'justify-between' : 'justify-start'
+                    className={`bg-white dark:bg-zinc-950/80 backdrop-blur-md px-4 ${isHome ? 'py-3' : 'py-3'} sticky top-0 z-50 shadow-sm dark:shadow-zinc-900 border-b border-transparent dark:border-zinc-800 flex items-center transition-colors duration-300 ${isHome ? 'justify-between' : 'justify-start'
                         }`}
                 >
                     {isHome ? (
                         <>
                             <div className="flex items-center gap-2">
-                                <img
-                                    src="/incentify-logo-clean.png"
-                                    alt="Incentify Online"
-                                    className="h-16 w-auto object-contain"
-                                />
+                                <div className="h-16 w-40 overflow-hidden flex items-center">
+                                    <img
+                                        src={logoSrc}
+                                        alt="Incentify Online"
+                                        className="h-full w-full object-contain object-left"
+                                    />
+                                </div>
                             </div>
 
                             <div className="flex items-center gap-3">
                                 <ModeToggle />
                                 {/* Wallet Balance Pill */}
-                                <div className="bg-blue-600 dark:bg-blue-700 text-white px-3 py-1 rounded-full flex items-center gap-1 text-sm font-medium shadow-md">
+                                <div className="bg-primary dark:bg-primary-strong text-white px-3 py-1 rounded-full flex items-center gap-1 text-sm font-medium shadow-md">
                                     <Wallet size={14} />
                                     <span>₹ 0.00</span>
                                 </div>
-                                {/* Profile Icon */}
-                                <div className="w-8 h-8 bg-yellow-400 rounded-full flex items-center justify-center border border-gray-200 dark:border-gray-700">
-                                    <User size={16} className="text-gray-700" />
-                                </div>
+                                <UserProfileMenu />
                             </div>
                         </>
                     ) : (
                         <div className="flex items-center justify-between w-full">
                             <div className="flex items-center gap-3">
-                                <button
+                                <LiquidButton
                                     type="button"
+                                    size="icon"
                                     onClick={() => navigate(-1)}
-                                    className="w-9 h-9 rounded-full border border-gray-100 bg-white shadow-sm flex items-center justify-center dark:bg-zinc-800 dark:border-zinc-700 dark:text-white"
+                                    className="rounded-full bg-white/50 dark:bg-zinc-900/50 backdrop-blur-md border border-white/70 dark:border-zinc-800/70 text-gray-800 dark:text-gray-100 shadow-md"
                                     aria-label="Go back"
                                 >
-                                    <ChevronLeft size={18} className="text-gray-700" />
-                                </button>
+                                    <ChevronLeft size={18} className="text-current" />
+                                </LiquidButton>
                                 <h1 className="text-base font-semibold text-gray-800 dark:text-gray-100">{headerTitle}</h1>
                             </div>
-                            <ModeToggle />
+                            <div className="flex items-center gap-3">
+                                <ModeToggle />
+                                <UserProfileMenu />
+                            </div>
                         </div>
                     )}
                 </header>
@@ -95,23 +108,21 @@ const Layout = ({ children }) => {
                 {/* MAIN CONTENT AREA (Scrollable) */}
                 <main
                     ref={mainRef}
-                    className="flex-1 overflow-y-auto pb-20 bg-blue-50 dark:bg-zinc-950 transition-colors duration-300 no-scrollbar touch-pan-y"
+                    className="flex-1 overflow-y-auto pb-20 bg-primary/10 dark:bg-zinc-950 transition-colors duration-300 no-scrollbar touch-pan-y"
                     style={{ WebkitOverflowScrolling: 'touch' }}
                 >
                     {children}
                 </main>
 
                 {/* BOTTOM NAVIGATION */}
-                {!location.pathname.startsWith('/vendor-dashboard') && (
-                    <LiquidDock
-                        items={[
-                            { path: '/', icon: <Home size={20} />, label: 'Home' },
-                            { path: '/gift-cards', icon: <Gift size={20} />, label: 'Gift Card' },
-                            { path: '/wallet', icon: <Wallet size={20} />, label: 'vCash' },
-                            { path: '/vendor-dashboard', icon: <Store size={20} />, label: 'Vendor' },
-                        ]}
-                    />
-                )}
+                <LiquidDock
+                    items={[
+                        { path: '/', icon: <Home size={20} />, label: 'Home' },
+                        { path: '/gift-cards', icon: <Gift size={20} />, label: 'Gift Card' },
+                        { path: '/wallet', icon: <Wallet size={20} />, label: 'vCash' },
+                        { path: '/vendor-dashboard', icon: <Store size={20} />, label: 'Vendor' },
+                    ]}
+                />
             </div>
         </div>
     );

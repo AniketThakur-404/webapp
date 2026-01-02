@@ -7,7 +7,7 @@ import HowItWorks from '../components/HowItWorks';
 
 const GiftCards = () => {
     return (
-        <div className="bg-blue-50 dark:bg-zinc-950 min-h-full pb-10 transition-colors duration-300">
+        <div className="bg-primary/10 dark:bg-zinc-950 min-h-full pb-10 transition-colors duration-300">
 
             {/* Search Bar */}
             <div className="bg-white dark:bg-zinc-950 p-4 pb-2 sticky top-0 z-40 transition-colors duration-300">
@@ -15,7 +15,7 @@ const GiftCards = () => {
                     <input
                         type="text"
                         placeholder="Search for gift cards..."
-                        className="w-full bg-gray-100 dark:bg-zinc-900 rounded-full py-3 px-5 pl-10 text-sm outline-none focus:ring-2 focus:ring-blue-500/20 transition-all text-gray-700 dark:text-gray-200 border border-transparent dark:border-zinc-800"
+                        className="w-full bg-gray-100 dark:bg-zinc-900 rounded-full py-3 px-5 pl-10 text-sm outline-none focus:ring-2 focus:ring-primary/30 transition-all text-gray-700 dark:text-gray-200 border border-transparent dark:border-zinc-800"
                     />
                     <div className="absolute left-3 top-3 text-gray-400">
                         <Search size={18} />
@@ -25,7 +25,7 @@ const GiftCards = () => {
 
             {/* Tabs */}
             <div className="flex gap-3 px-4 py-3 overflow-x-auto no-scrollbar mask-gradient">
-                <button className="bg-blue-600 text-white px-5 py-1.5 rounded-full text-sm font-medium whitespace-nowrap shadow-md shadow-blue-200 dark:shadow-none">Store</button>
+                <button className="bg-primary text-white px-5 py-1.5 rounded-full text-sm font-medium whitespace-nowrap shadow-md shadow-primary/30 dark:shadow-none">Store</button>
                 <button className="bg-white dark:bg-zinc-900 text-gray-600 dark:text-gray-300 px-5 py-1.5 rounded-full text-sm font-medium border border-gray-200 dark:border-zinc-800 whitespace-nowrap hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors">My Vouchers</button>
                 <button className="bg-white dark:bg-zinc-900 text-gray-600 dark:text-gray-300 px-5 py-1.5 rounded-full text-sm font-medium border border-gray-200 dark:border-zinc-800 whitespace-nowrap hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors">History</button>
             </div>
@@ -56,7 +56,7 @@ const GiftCards = () => {
             <div className="bg-white dark:bg-zinc-900 rounded-t-[2rem] p-5 shadow-[0_-4px_20px_-5px_rgba(0,0,0,0.05)] dark:shadow-zinc-950 min-h-[300px] transition-colors duration-300">
                 <div className="flex justify-between items-end mb-4">
                     <h3 className="text-sm font-bold text-gray-800 dark:text-gray-100">Best Sellers</h3>
-                    <Link to="/gift-cards-list" className="text-[10px] text-blue-500 font-bold cursor-pointer">
+                    <Link to="/gift-cards-list" className="text-[10px] text-primary-strong font-bold cursor-pointer">
                         View All
                     </Link>
                 </div>
@@ -81,7 +81,7 @@ const GiftCards = () => {
                                         Get Flat {card.discount} Instant Discount
                                     </p>
                                 </div>
-                                <span className="text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-3 py-1 rounded-full text-xs font-bold">Buy</span>
+                                <span className="text-primary-strong dark:text-primary bg-primary/10 dark:bg-primary-strong/30 px-3 py-1 rounded-full text-xs font-bold">Buy</span>
                             </Link>
                         ))}
                 </div>

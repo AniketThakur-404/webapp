@@ -20,22 +20,22 @@ const ProductInfo = () => {
     {
       title: 'Look for Incentify Online Logo',
       description: 'Check the Incentify Online logo on products (online or offline).',
-      icon: <BadgeCheck size={16} className="text-blue-600" />,
+      icon: <BadgeCheck size={16} className="text-primary-strong" />,
     },
     {
       title: 'Scratch and Scan',
       description: 'Scratch the hidden code and scan it securely.',
-      icon: <Scan size={16} className="text-blue-600" />,
+      icon: <Scan size={16} className="text-primary-strong" />,
     },
     {
       title: 'Get Rewards',
       description: 'See authentication status and cashback instantly.',
-      icon: <Gift size={16} className="text-blue-600" />,
+      icon: <Gift size={16} className="text-primary-strong" />,
     },
   ];
 
   return (
-    <div className="bg-blue-50/70 dark:bg-zinc-950 min-h-full pb-24 transition-colors duration-300">
+    <div className="bg-primary/10 dark:bg-zinc-950 min-h-full pb-24 transition-colors duration-300">
       <div className="px-4 mt-4 space-y-4">
         <div className="relative rounded-2xl overflow-hidden bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 shadow-sm transition-colors duration-300">
           <FallbackImage
@@ -59,7 +59,7 @@ const ProductInfo = () => {
           {brand && (
             <Link
               to={`/brand-details/${brand.id}`}
-              className="text-xs font-semibold text-blue-600 dark:text-blue-400 inline-flex items-center gap-1"
+              className="text-xs font-semibold text-primary-strong dark:text-primary inline-flex items-center gap-1"
             >
               {brand.name}
               <ChevronRight size={12} />
@@ -71,7 +71,7 @@ const ProductInfo = () => {
             {details.map((detail) => (
               <div
                 key={detail.label}
-                className="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-3 border border-blue-100 dark:border-blue-900/30"
+                className="bg-primary/10 dark:bg-primary-strong/20 rounded-xl p-3 border border-primary/20 dark:border-primary-strong/30"
               >
                 <div className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
                   {detail.label}
@@ -88,9 +88,9 @@ const ProductInfo = () => {
             {steps.map((step) => (
               <div
                 key={step.title}
-                className="bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-900/30 rounded-xl p-3 text-center space-y-2"
+                className="bg-primary/10 dark:bg-primary-strong/20 border border-primary/20 dark:border-primary-strong/30 rounded-xl p-3 text-center space-y-2"
               >
-                <div className="w-8 h-8 rounded-full bg-white dark:bg-zinc-800 shadow-sm border border-blue-100 dark:border-zinc-700 flex items-center justify-center mx-auto">
+                <div className="w-8 h-8 rounded-full bg-white dark:bg-zinc-800 shadow-sm border border-primary/20 dark:border-zinc-700 flex items-center justify-center mx-auto">
                   {step.icon}
                 </div>
                 <div className="text-[10px] font-semibold text-gray-700 dark:text-gray-300">{step.title}</div>
