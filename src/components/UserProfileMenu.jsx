@@ -96,7 +96,7 @@ const UserProfileMenu = () => {
 
   const goToProfile = () => {
     setIsOpen(false);
-    navigate("/wallet");
+    navigate("/profile");
   };
 
   const goToHelp = () => {

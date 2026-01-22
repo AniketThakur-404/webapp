@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { verifyPublicQr, scanQr } from '../lib/api';
+import { AUTH_TOKEN_KEY } from '../lib/auth';
 import { Loader2, ShieldCheck, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 const RedeemQr = () => {
@@ -27,7 +28,7 @@ const RedeemQr = () => {
     }, [hash]);
 
     const handleRedeem = async () => {
-        const token = localStorage.getItem('token');
+        const token = localStorage.getItem(AUTH_TOKEN_KEY);
         if (!token) {
             // Find existing auth route, assume /login or /?auth=login logic
             // For now, redirect to home which likely has login validation or explicit login page

@@ -9,6 +9,7 @@ import BrandDetails from './pages/BrandDetails';
 import ProductInfo from './pages/ProductInfo';
 import LiquidGlassDemo from './pages/LiquidGlassDemo';
 import Wallet from './pages/Wallet';
+import Profile from './pages/Profile';
 import Store from './pages/Store';
 import AdminDashboard from './pages/AdminDashboard';
 import VendorDashboard from './pages/VendorDashboard';
@@ -42,6 +43,7 @@ function App() {
             <Route path="/gift-card-info" element={<GiftCardInfo />} />
             <Route path="/gift-card-info/:id" element={<GiftCardInfo />} />
             <Route path="/wallet" element={<Wallet />} />
+            <Route path="/profile" element={<Profile />} />
             <Route path="/store" element={<Store />} />
             <Route path="/brand-details" element={<BrandDetails />} />
             <Route path="/brand-details/:id" element={<BrandDetails />} />

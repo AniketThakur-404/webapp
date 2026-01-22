@@ -20,8 +20,8 @@ import {
   Plus,
   ArrowRight,
   ClipboardCheck,
+  Download,
   RefreshCw,
-  Calendar,
   Trash2,
 } from "lucide-react";
 import {
@@ -30,13 +30,13 @@ import {
   getVendorWallet,
   getVendorBrand,
   getVendorCampaigns,
+  getVendorOrders,
   getVendorProfile,
   getVendorProducts,
   addVendorProduct,
   loginWithEmail,
   createVendorCampaign,
   updateVendorCampaign,
-  deleteVendorCampaign,
   deleteVendorQrBatch,
   orderVendorQrs,
   rechargeVendorWallet,
@@ -105,12 +105,52 @@ const parseNumericValue = (value, fallback = 0) => {
   return Number.isFinite(numeric) ? numeric : fallback;
 };
 
+const parseOptionalNumber = (value) => {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+};
+
+const getAllocationRowTotal = (row) => {
+  const cashback = parseOptionalNumber(row?.cashbackAmount);
+  const quantity = parseOptionalNumber(row?.quantity);
+  if (cashback === null || quantity === null) return null;
+  return cashback * quantity;
+};
+
+const formatAllocationTotal = (row) => {
+  const total = getAllocationRowTotal(row);
+  return total === null ? "" : total.toFixed(2);
+};
+
 const getGeneratedPrice = (qr) => {
   const qrValue = parseNumericValue(qr?.cashbackAmount, 0);
   if (qrValue > 0) {
     return qrValue;
   }
   return parseNumericValue(qr?.Campaign?.cashbackAmount, 0);
+};
+
+const buildAllocationGroups = (allocations) => {
+  if (!Array.isArray(allocations)) return [];
+  const grouped = new Map();
+
+  allocations.forEach((alloc) => {
+    const price = parseNumericValue(alloc?.cashbackAmount, 0);
+    const quantity = parseInt(alloc?.quantity, 10) || 0;
+    const key = price.toFixed(2);
+    if (!grouped.has(key)) {
+      grouped.set(key, { price, quantity: 0, totalBudget: 0 });
+    }
+    const group = grouped.get(key);
+    const rowBudget = parseNumericValue(alloc?.totalBudget, 0);
+    group.quantity += quantity;
+    group.totalBudget += rowBudget || price * quantity;
+  });
+
+  return Array.from(grouped.values()).sort((a, b) => a.price - b.price);
 };
 
 const VendorDashboard = () => {
@@ -151,6 +191,18 @@ const VendorDashboard = () => {
   const [qrError, setQrError] = useState("");
   const [isLoadingQrs, setIsLoadingQrs] = useState(false);
   const [deletingBatchKey, setDeletingBatchKey] = useState(null);
+  const [qrPage, setQrPage] = useState(1);
+  const [qrTotal, setQrTotal] = useState(0);
+  const [qrStatusCounts, setQrStatusCounts] = useState({});
+  const [qrHasMore, setQrHasMore] = useState(false);
+
+  const [orders, setOrders] = useState([]);
+  const [ordersError, setOrdersError] = useState("");
+  const [isLoadingOrders, setIsLoadingOrders] = useState(false);
+  const [ordersPage, setOrdersPage] = useState(1);
+  const [ordersTotal, setOrdersTotal] = useState(0);
+  const [orderStatusCounts, setOrderStatusCounts] = useState({});
+  const [ordersHasMore, setOrdersHasMore] = useState(false);
 
   const [scanHash, setScanHash] = useState("");
   const [scanStatus, setScanStatus] = useState("");
@@ -162,8 +214,6 @@ const VendorDashboard = () => {
   const [qrActionStatus, setQrActionStatus] = useState("");
   const qrCarouselRef = useRef(null);
   const lastAutoFilledCashbackRef = useRef(null);
-  const campaignStartDateRef = useRef(null);
-  const campaignEndDateRef = useRef(null);
   const [showAllInventory, setShowAllInventory] = useState(false);
 
   const [companyProfile, setCompanyProfile] = useState({
@@ -174,6 +224,7 @@ const VendorDashboard = () => {
   });
 
   const [brandProfile, setBrandProfile] = useState({
+    id: "",
     name: "",
     logoUrl: "",
     website: "",
@@ -191,17 +242,15 @@ const VendorDashboard = () => {
     description: "",
     cashbackAmount: "",
     totalBudget: "",
-    startDate: "",
-    endDate: "",
     productId: "",
   });
   const [campaignStatus, setCampaignStatus] = useState("");
   const [campaignError, setCampaignError] = useState("");
   const [isSavingCampaign, setIsSavingCampaign] = useState(false);
-  const [deletingCampaignId, setDeletingCampaignId] = useState(null);
   const [campaignRows, setCampaignRows] = useState([{ id: Date.now(), cashbackAmount: "", quantity: "", totalBudget: "" }]);
-  const [campaignTab, setCampaignTab] = useState('create'); // 'create', 'active', 'pending'
+  const [campaignTab, setCampaignTab] = useState('create'); // 'create', 'pending', 'active'
   const [selectedPendingCampaign, setSelectedPendingCampaign] = useState(null);
+  const [selectedActiveCampaign, setSelectedActiveCampaign] = useState(null);
   const [isPayingCampaign, setIsPayingCampaign] = useState(false);
 
   const handleAddCampaignRow = () => {
@@ -225,6 +274,8 @@ const VendorDashboard = () => {
             const qty = field === 'quantity' ? parseFloat(value) : parseFloat(row.quantity);
             if (!isNaN(cb) && !isNaN(qty) && cb > 0 && qty > 0) {
               updatedRow.totalBudget = (cb * qty).toFixed(2);
+            } else {
+              updatedRow.totalBudget = "";
             }
           }
           return updatedRow;
@@ -233,6 +284,21 @@ const VendorDashboard = () => {
       })
     );
   };
+
+  const campaignAllocationSummary = useMemo(() => {
+    return campaignRows.reduce(
+      (summary, row) => {
+        const quantityValue = parseOptionalNumber(row.quantity);
+        const rowTotal = getAllocationRowTotal(row);
+        summary.subtotal += rowTotal ?? 0;
+        if (Number.isFinite(quantityValue)) {
+          summary.quantity += Math.max(0, Math.floor(quantityValue));
+        }
+        return summary;
+      },
+      { subtotal: 0, quantity: 0 }
+    );
+  }, [campaignRows]);
 
 
   const [products, setProducts] = useState([]);
@@ -333,21 +399,15 @@ const VendorDashboard = () => {
   const getStatusClasses = (status) => {
     const normalized = String(status || "").toLowerCase();
     if (normalized === "redeemed") return "text-emerald-600 dark:text-emerald-400";
+    if (normalized === "paid" || normalized === "shipped") {
+      return "text-emerald-600 dark:text-emerald-400";
+    }
     if (normalized === "expired") return "text-rose-600 dark:text-rose-400";
     if (normalized === "assigned") return "text-amber-600 dark:text-amber-400";
     if (normalized === "generated" || normalized === "active") {
       return "text-primary-strong dark:text-primary";
     }
     return "text-gray-500 dark:text-gray-400";
-  };
-
-  const openDatePicker = (inputRef) => {
-    if (!inputRef?.current) return;
-    if (typeof inputRef.current.showPicker === "function") {
-      inputRef.current.showPicker();
-      return;
-    }
-    inputRef.current.focus();
   };
 
   const copyToClipboard = async (value) => {
@@ -506,6 +566,17 @@ const VendorDashboard = () => {
     lastAutoFilledCashbackRef.current = null;
     setSubscriptionBlocked("");
     setSubscriptionInfo(null);
+    setSelectedActiveCampaign(null);
+    setQrs([]);
+    setQrTotal(0);
+    setQrPage(1);
+    setQrStatusCounts({});
+    setQrHasMore(false);
+    setOrders([]);
+    setOrdersTotal(0);
+    setOrdersPage(1);
+    setOrderStatusCounts({});
+    setOrdersHasMore(false);
   };
 
   const handleVendorAccessError = (err) => {
@@ -539,40 +610,89 @@ const VendorDashboard = () => {
   };
 
   const loadWallet = async (authToken = token) => {
-    if (!authToken) return;
+    if (!authToken) return false;
     setIsLoadingWallet(true);
     setWalletError("");
     try {
       const data = await getVendorWallet(authToken);
       setWallet(data);
+      return true;
     } catch (err) {
-      if (handleVendorAccessError(err)) return;
+      if (handleVendorAccessError(err)) return false;
       if (err.status === 404) {
         setWallet(null);
       } else {
         setWalletError(err.message || "Unable to load wallet.");
       }
+      return true;
     } finally {
       setIsLoadingWallet(false);
     }
   };
 
-  const loadQrs = async (authToken = token) => {
+  const loadQrs = async (authToken = token, { page = 1, append = false } = {}) => {
     if (!authToken) return;
     setIsLoadingQrs(true);
     setQrError("");
+    const limit = 120;
     try {
-      const data = await getVendorQrs(authToken);
-      setQrs(Array.isArray(data) ? data : []);
+      const data = await getVendorQrs(authToken, { page, limit });
+      const items = Array.isArray(data) ? data : data?.items || data?.data || [];
+      const total = Number.isFinite(data?.total) ? data.total : items.length;
+      const statusCounts = data?.statusCounts || {};
+
+      setQrs((prev) => {
+        const updated = append ? [...prev, ...items] : items;
+        setQrHasMore(updated.length < total);
+        return updated;
+      });
+      setQrTotal(total);
+      setQrPage(page);
+      setQrStatusCounts(statusCounts);
     } catch (err) {
       if (handleVendorAccessError(err)) return;
       if (err.status === 404) {
         setQrs([]);
+        setQrTotal(0);
+        setQrHasMore(false);
       } else {
         setQrError(err.message || "Unable to load QR inventory.");
       }
     } finally {
       setIsLoadingQrs(false);
+    }
+  };
+
+  const loadOrders = async (authToken = token, { page = 1, append = false } = {}) => {
+    if (!authToken) return;
+    setIsLoadingOrders(true);
+    setOrdersError("");
+    const limit = 20;
+    try {
+      const data = await getVendorOrders(authToken, { page, limit });
+      const items = Array.isArray(data) ? data : data?.items || data?.data || [];
+      const total = Number.isFinite(data?.total) ? data.total : items.length;
+      const statusCounts = data?.statusCounts || {};
+
+      setOrders((prev) => {
+        const updated = append ? [...prev, ...items] : items;
+        setOrdersHasMore(updated.length < total);
+        return updated;
+      });
+      setOrdersTotal(total);
+      setOrdersPage(page);
+      setOrderStatusCounts(statusCounts);
+    } catch (err) {
+      if (handleVendorAccessError(err)) return;
+      if (err.status === 404) {
+        setOrders([]);
+        setOrdersTotal(0);
+        setOrdersHasMore(false);
+      } else {
+        setOrdersError(err.message || "Unable to load orders.");
+      }
+    } finally {
+      setIsLoadingOrders(false);
     }
   };
 
@@ -608,6 +728,7 @@ const VendorDashboard = () => {
     try {
       const data = await getVendorBrand(authToken);
       setBrandProfile({
+        id: data.id || "",
         name: data.name || "",
         logoUrl: data.logoUrl || "",
         website: data.website || "",
@@ -618,6 +739,7 @@ const VendorDashboard = () => {
       if (handleVendorAccessError(err)) return;
       if (err.status === 404) {
         setBrandProfile({
+          id: "",
           name: "",
           logoUrl: "",
           website: "",
@@ -666,13 +788,20 @@ const VendorDashboard = () => {
 
   useEffect(() => {
     if (!token || subscriptionBlocked) return;
-    loadVendor(token);
-    loadWallet(token);
-    loadQrs(token);
-    loadCompanyProfile(token);
-    loadBrandProfile(token);
-    loadCampaigns(token);
-    loadProducts(token);
+    const initializeVendorData = async () => {
+      await loadVendor(token);
+      const canContinue = await loadWallet(token);
+      if (!canContinue) return;
+      await Promise.all([
+        loadQrs(token),
+        loadOrders(token),
+        loadCompanyProfile(token),
+        loadBrandProfile(token),
+        loadCampaigns(token),
+        loadProducts(token),
+      ]);
+    };
+    initializeVendorData();
   }, [token, subscriptionBlocked]);
 
   useEffect(() => {
@@ -749,6 +878,7 @@ const VendorDashboard = () => {
     clearSession("Signed out.");
     setWallet(null);
     setQrs([]);
+    setOrders([]);
     setScanHash("");
     setScanStatus("");
     setScanError("");
@@ -760,6 +890,7 @@ const VendorDashboard = () => {
       address: "",
     });
     setBrandProfile({
+      id: "",
       name: "",
       logoUrl: "",
       website: "",
@@ -847,6 +978,8 @@ const VendorDashboard = () => {
     let successes = 0;
     let failures = 0;
     const newHashes = [];
+    const newOrderIds = [];
+    let totalPrintCost = 0;
 
     try {
       for (const row of rowsToUse) {
@@ -854,6 +987,13 @@ const VendorDashboard = () => {
           // Use the selected campaign for all rows, pass per-row cashbackAmount
           const result = await orderVendorQrs(token, selectedQrCampaign, Number(row.quantity), Number(row.cashbackAmount));
           successes += result.count || 0;
+          if (result?.order?.id) {
+            newOrderIds.push(result.order.id);
+            const printAmount = Number(result.order.totalAmount);
+            if (Number.isFinite(printAmount)) {
+              totalPrintCost += printAmount;
+            }
+          }
           if (Array.isArray(result.qrs)) {
             newHashes.push(...result.qrs.map((item) => item.uniqueHash));
           }
@@ -884,12 +1024,14 @@ const VendorDashboard = () => {
 
       if (successes > 0 && batchTiers.length > 0) {
         setLastBatchSummary({
-          id: Date.now(),
+          id: newOrderIds[0] || Date.now(),
           campaignTitle: campaign?.title || "Campaign",
           timestamp: new Date().toISOString(),
           tiers: batchTiers,
           totalQrs: successes,
           totalCost: batchTiers.reduce((sum, tier) => sum + tier.cost, 0),
+          totalPrintCost,
+          orderIds: newOrderIds,
           hashes: newHashes.slice(0, 50),
         });
       }
@@ -897,6 +1039,7 @@ const VendorDashboard = () => {
         setLastOrderHashes(newHashes.slice(0, 10));
         await loadWallet();
         await loadQrs();
+        await loadOrders();
       }
       if (failures === 0) {
         setQrRows([{ id: Date.now(), cashbackAmount: "", quantity: 10 }]);
@@ -1011,39 +1154,53 @@ const VendorDashboard = () => {
     let firstCashbackValue = 0;
 
     if (campaignRows.length > 0) {
-      firstCashbackValue = parseFloat(campaignRows[0].cashbackAmount) || 0;
+      firstCashbackValue = parseOptionalNumber(campaignRows[0].cashbackAmount) || 0;
     }
 
     for (const row of campaignRows) {
       // Skip empty rows
       if (!row.cashbackAmount && !row.quantity && !row.totalBudget) continue;
 
-      const cb = parseFloat(row.cashbackAmount);
-      const total = parseFloat(row.totalBudget);
+      const cb = parseOptionalNumber(row.cashbackAmount);
+      const qtyValue = parseOptionalNumber(row.quantity);
+      const derivedTotal = getAllocationRowTotal(row);
 
-      if (isNaN(cb) || cb < 0) {
+      if (cb === null || cb < 0) {
         setCampaignError("Invalid cashback amount in allocations.");
         return;
       }
-      if (isNaN(total) || total < 0) {
+      if (qtyValue === null || qtyValue < 0) {
+        setCampaignError("Invalid quantity in allocations.");
+        return;
+      }
+      if (derivedTotal === null || derivedTotal < 0) {
         setCampaignError("Invalid total budget/cost in allocations.");
         return;
       }
-      calculatedTotalBudget += (total || 0);
+      calculatedTotalBudget += derivedTotal;
     }
 
     const cashbackValue = firstCashbackValue;
     const budgetValue = calculatedTotalBudget > 0 ? calculatedTotalBudget : null;
-    if (!campaignForm.startDate || !campaignForm.endDate) {
-      setCampaignError("Start and end dates are required.");
-      return;
+    const now = new Date();
+    const startDate = new Date(now);
+    let endDate = null;
+    if (subscriptionInfo?.endDate) {
+      const parsedEnd = new Date(subscriptionInfo.endDate);
+      if (!Number.isNaN(parsedEnd.getTime())) {
+        endDate = parsedEnd;
+      }
     }
+    if (!endDate || endDate <= startDate) {
+      endDate = new Date(startDate);
+      endDate.setMonth(endDate.getMonth() + 3);
+    }
+    const startDateValue = startDate.toISOString().slice(0, 10);
+    const endDateValue = endDate.toISOString().slice(0, 10);
     setCampaignError("");
     setCampaignStatus("");
     setIsSavingCampaign(true);
     try {
-      // Get the vendor's brand first - or try to derive from selected product
-      let brand;
       let derivedBrandId = null;
 
       // Check if we can get brandId from selected product
@@ -1054,11 +1211,13 @@ const VendorDashboard = () => {
         }
       }
 
-      try {
-        brand = await getVendorBrand(token);
-      } catch (brandErr) {
-        // If getting brand profile fails, we might still proceed if we have a derived brand ID
-        if (!derivedBrandId) {
+      let effectiveBrandId = derivedBrandId || brandProfile?.id || null;
+
+      if (!effectiveBrandId) {
+        try {
+          const brand = await getVendorBrand(token);
+          effectiveBrandId = brand?.id || null;
+        } catch (brandErr) {
           if (handleVendorAccessError(brandErr)) return;
           setCampaignError("No brand is assigned yet. Please contact the admin or select a product.");
           setIsSavingCampaign(false);
@@ -1066,28 +1225,32 @@ const VendorDashboard = () => {
         }
       }
 
-      const effectiveBrandId = derivedBrandId || brand?.id;
-
       if (!effectiveBrandId) {
         setCampaignError("Unable to determine brand for this campaign. Please select a product.");
         setIsSavingCampaign(false);
         return;
       }
 
-      await createVendorCampaign(token, {
+      const result = await createVendorCampaign(token, {
         brandId: effectiveBrandId,
         title: campaignForm.title.trim(),
         description: campaignForm.description.trim() || undefined,
-        startDate: campaignForm.startDate,
-        endDate: campaignForm.endDate,
+        startDate: startDateValue,
+        endDate: endDateValue,
         totalBudget: budgetValue,
         subtotal: budgetValue,
-        allocations: campaignRows.map(row => ({
-          productId: campaignForm.productId || null,
-          cashbackAmount: parseFloat(row.cashbackAmount) || 0,
-          quantity: parseInt(row.quantity) || 0,
-          totalBudget: parseFloat(row.totalBudget) || 0
-        }))
+        allocations: campaignRows.map(row => {
+          const cashbackAmount = parseOptionalNumber(row.cashbackAmount) || 0;
+          const quantity = parseInt(row.quantity, 10) || 0;
+          const allocationTotal =
+            getAllocationRowTotal({ cashbackAmount, quantity }) ?? 0;
+          return {
+            productId: campaignForm.productId || null,
+            cashbackAmount,
+            quantity,
+            totalBudget: allocationTotal
+          };
+        })
       });
       setCampaignStatusWithTimeout("Campaign created.");
       setCampaignForm({
@@ -1095,10 +1258,15 @@ const VendorDashboard = () => {
         description: "",
         cashbackAmount: "",
         totalBudget: "",
-        startDate: "",
-        endDate: "",
         productId: "",
       });
+      setCampaignRows([{ id: Date.now(), cashbackAmount: "", quantity: "", totalBudget: "" }]);
+      if (result?.campaign) {
+        setCampaigns((prev) => {
+          const filtered = prev.filter((campaign) => campaign.id !== result.campaign.id);
+          return [result.campaign, ...filtered];
+        });
+      }
       // result from createVendorCampaign structure is { message, campaign }
       // But we can just reload campaigns.
       await loadCampaigns();
@@ -1119,7 +1287,11 @@ const VendorDashboard = () => {
     try {
       const totalQty = (campaign.allocations || []).reduce((sum, a) => sum + (parseInt(a.quantity) || 0), 0);
       const printCost = totalQty * 1;
-      const totalCost = parseFloat(campaign.totalBudget) + printCost;
+      const baseBudget = parseNumericValue(
+        campaign.subtotal,
+        parseNumericValue(campaign.totalBudget, 0)
+      );
+      const totalCost = baseBudget + printCost;
 
       if (!wallet || wallet.balance < totalCost) {
         throw new Error(`Insufficient wallet balance. Required: ₹${totalCost.toFixed(2)}`);
@@ -1140,34 +1312,6 @@ const VendorDashboard = () => {
       alert(err.message || "Payment failed");
     } finally {
       setIsPayingCampaign(false);
-    }
-  };
-
-  const handleDeleteCampaign = async (campaignIdValue) => {
-    if (!token || !campaignIdValue) return;
-    const campaign = campaigns.find((item) => item.id === campaignIdValue);
-    const name = campaign?.title || "this campaign";
-    if (!window.confirm(`Delete ${name}? All QRs for this campaign will be removed.`)) {
-      return;
-    }
-
-    setDeletingCampaignId(campaignIdValue);
-    setCampaignError("");
-    setCampaignStatus("");
-    try {
-      await deleteVendorCampaign(token, campaignIdValue);
-      setCampaigns((prev) => prev.filter((item) => item.id !== campaignIdValue));
-      if (selectedQrCampaign === campaignIdValue) {
-        setSelectedQrCampaign("");
-        setQrRows([{ id: Date.now(), cashbackAmount: "", quantity: 10 }]);
-      }
-      setQrs((prev) => prev.filter((qr) => qr.campaignId !== campaignIdValue));
-      setCampaignStatusWithTimeout("Campaign deleted.");
-    } catch (err) {
-      if (handleVendorAccessError(err)) return;
-      setCampaignError(err.message || "Unable to delete campaign.");
-    } finally {
-      setDeletingCampaignId(null);
     }
   };
 
@@ -1194,24 +1338,27 @@ const VendorDashboard = () => {
 
     try {
       // Get the vendor's first brand
-      let brand;
-      try {
-        brand = await getVendorBrand(token);
-      } catch (brandErr) {
-        if (handleVendorAccessError(brandErr)) return;
-        setProductError("No brand is assigned yet. Please contact the admin.");
-        setIsSavingProduct(false);
-        return;
+      let effectiveBrandId = brandProfile?.id || null;
+      if (!effectiveBrandId) {
+        try {
+          const brand = await getVendorBrand(token);
+          effectiveBrandId = brand?.id || null;
+        } catch (brandErr) {
+          if (handleVendorAccessError(brandErr)) return;
+          setProductError("No brand is assigned yet. Please contact the admin.");
+          setIsSavingProduct(false);
+          return;
+        }
       }
 
-      if (!brand?.id) {
+      if (!effectiveBrandId) {
         setProductError("No brand is assigned yet. Please contact the admin.");
         setIsSavingProduct(false);
         return;
       }
 
       await addVendorProduct(token, {
-        brandId: brand.id,
+        brandId: effectiveBrandId,
         name: productForm.name.trim(),
         variant: productForm.variant.trim() || null,
         category: productForm.category.trim() || null,
@@ -1236,12 +1383,40 @@ const VendorDashboard = () => {
   };
 
   const qrStats = useMemo(() => {
+    const statusCounts = qrStatusCounts || {};
+    const activeFromCounts =
+      (statusCounts.generated || 0) + (statusCounts.assigned || 0) + (statusCounts.active || 0);
+    const redeemedFromCounts = (statusCounts.redeemed || 0) + (statusCounts.claimed || 0);
+    const totalFromCounts = Number.isFinite(qrTotal) && qrTotal > 0 ? qrTotal : 0;
+
+    if (Object.keys(statusCounts).length || totalFromCounts > 0) {
+      return {
+        total: totalFromCounts || qrs.length,
+        redeemed: redeemedFromCounts,
+        active: activeFromCounts
+      };
+    }
+
     const total = qrs.length;
     const redeemed = qrs.filter((qr) => qr.status === "redeemed").length;
     const activeStatuses = new Set(["generated", "assigned", "active"]);
     const active = qrs.filter((qr) => activeStatuses.has(qr.status)).length;
     return { total, redeemed, active };
-  }, [qrs]);
+  }, [qrStatusCounts, qrTotal, qrs]);
+  const qrTotalLabel = qrTotal || qrs.length;
+  const qrCoverageLabel =
+    qrTotal > qrs.length ? `Showing latest ${qrs.length} of ${qrTotal}` : "";
+  const pendingCampaigns = useMemo(
+    () => campaigns.filter((campaign) => campaign.status === "pending"),
+    [campaigns]
+  );
+  const activeCampaigns = useMemo(
+    () => campaigns.filter((campaign) => campaign.status === "active"),
+    [campaigns]
+  );
+  const showQrGenerator = false;
+  const showQrOrdersSection = false;
+  const showOrderTracking = false;
 
   const overviewCampaignOptions = useMemo(() => {
     const options = [{ id: "all", label: "All campaigns" }];
@@ -1260,6 +1435,11 @@ const VendorDashboard = () => {
     }
     return options;
   }, [campaigns, qrs]);
+
+  const overviewCampaignLabel = useMemo(() => {
+    const match = overviewCampaignOptions.find((option) => option.id === overviewCampaignId);
+    return match?.label || "Campaign";
+  }, [overviewCampaignId, overviewCampaignOptions]);
 
   useEffect(() => {
     const isValidSelection = overviewCampaignOptions.some(
@@ -1308,6 +1488,87 @@ const VendorDashboard = () => {
 
     return counts;
   }, [overviewFilteredQrs]);
+  const isOverviewAll = overviewCampaignId === "all";
+  const isOverviewUnassigned = overviewCampaignId === "unassigned";
+  const overviewSelectedCampaignCount = isOverviewAll
+    ? campaigns.length
+    : isOverviewUnassigned
+      ? 0
+      : 1;
+  const overviewSelectedQrTotal = isOverviewAll ? qrStats.total : overviewQrStatusCounts.total;
+  const overviewSelectedQrRedeemed = isOverviewAll ? qrStats.redeemed : overviewQrStatusCounts.redeemed;
+
+  const overviewRedemptionSeries = useMemo(() => {
+    const days = 7;
+    const today = new Date();
+    const buckets = [];
+
+    for (let i = days - 1; i >= 0; i -= 1) {
+      const date = new Date(today);
+      date.setHours(0, 0, 0, 0);
+      date.setDate(date.getDate() - i);
+      const key = format(date, "yyyy-MM-dd");
+      buckets.push({ key, name: format(date, "MMM d"), redemptions: 0 });
+    }
+
+    const bucketMap = new Map(buckets.map((bucket) => [bucket.key, bucket]));
+
+    overviewFilteredQrs.forEach((qr) => {
+      const status = String(qr.status || "").toLowerCase();
+      if (status !== "redeemed" && status !== "claimed") return;
+      const rawDate = qr.updatedAt || qr.createdAt;
+      if (!rawDate) return;
+      const date = new Date(rawDate);
+      if (Number.isNaN(date.getTime())) return;
+      const key = format(date, "yyyy-MM-dd");
+      const bucket = bucketMap.get(key);
+      if (!bucket) return;
+      bucket.redemptions += 1;
+    });
+
+    return buckets.map(({ key, ...rest }) => rest);
+  }, [overviewFilteredQrs]);
+
+  const campaignPerformanceSeries = useMemo(() => {
+    if (!overviewFilteredQrs.length) return [];
+    const redeemedStatuses = new Set(["redeemed", "claimed"]);
+
+    if (!isOverviewAll) {
+      const redeemedCount = overviewFilteredQrs.filter((qr) =>
+        redeemedStatuses.has(String(qr.status || "").toLowerCase())
+      ).length;
+      return [
+        {
+          name: overviewCampaignLabel,
+          sent: overviewFilteredQrs.length,
+          redeemed: redeemedCount,
+        },
+      ];
+    }
+
+    const nameMap = new Map(
+      campaigns.map((campaign) => [campaign.id, campaign.title || "Untitled campaign"])
+    );
+    const summaryMap = new Map();
+
+    overviewFilteredQrs.forEach((qr) => {
+      const campaignId = qr.Campaign?.id || qr.campaignId || "unassigned";
+      const campaignTitle =
+        qr.Campaign?.title || nameMap.get(campaignId) || "Unassigned";
+      if (!summaryMap.has(campaignId)) {
+        summaryMap.set(campaignId, { name: campaignTitle, sent: 0, redeemed: 0 });
+      }
+      const summary = summaryMap.get(campaignId);
+      summary.sent += 1;
+      if (redeemedStatuses.has(String(qr.status || "").toLowerCase())) {
+        summary.redeemed += 1;
+      }
+    });
+
+    return Array.from(summaryMap.values())
+      .sort((a, b) => b.sent - a.sent)
+      .slice(0, 6);
+  }, [overviewFilteredQrs, isOverviewAll, overviewCampaignLabel, campaigns]);
 
   const recentQrs = useMemo(() => {
     return [...qrs]
@@ -1378,6 +1639,60 @@ const VendorDashboard = () => {
         return a.title.localeCompare(b.title);
       });
   }, [qrs]);
+  const campaignQrMap = useMemo(() => {
+    const map = new Map();
+    qrsGroupedByCampaign.forEach((campaign) => {
+      if (campaign.id !== "unassigned") {
+        map.set(campaign.id, campaign);
+      }
+    });
+    return map;
+  }, [qrsGroupedByCampaign]);
+  const activeCampaignDetails = useMemo(() => {
+    if (!selectedActiveCampaign) return null;
+    const campaign = selectedActiveCampaign;
+    const allocationGroups = buildAllocationGroups(campaign.allocations);
+    const totalQty = allocationGroups.reduce((sum, group) => sum + group.quantity, 0);
+    const fallbackBudget = allocationGroups.reduce((sum, group) => sum + group.totalBudget, 0);
+    const totalBudget = parseNumericValue(
+      campaign.subtotal,
+      parseNumericValue(campaign.totalBudget, fallbackBudget)
+    );
+    const printCost = totalQty * 1;
+    const stats = campaignQrMap.get(campaign.id);
+    const priceGroups = stats?.priceGroups || [];
+    const productId =
+      campaign.productId ||
+      (Array.isArray(campaign.allocations)
+        ? campaign.allocations.find((alloc) => alloc.productId)?.productId
+        : null);
+    const product = productId ? products.find((item) => item.id === productId) : null;
+    const breakdownRows = priceGroups.length
+      ? priceGroups.map((group) => ({
+        cashback: group.price,
+        quantity: group.qrs.length,
+        active: group.activeCount,
+        redeemed: group.redeemedCount,
+      }))
+      : allocationGroups.map((group) => ({
+        cashback: group.price,
+        quantity: group.quantity,
+        active: 0,
+        redeemed: 0,
+      }));
+
+    return {
+      campaign,
+      allocationGroups,
+      totalQty,
+      totalBudget,
+      printCost,
+      stats,
+      product,
+      breakdownRows,
+    };
+  }, [selectedActiveCampaign, campaignQrMap, products]);
+  const activeCampaign = activeCampaignDetails?.campaign;
 
   const primaryQrRow = qrRows[0];
   const primaryQrCashback = parseNumericValue(primaryQrRow?.cashbackAmount, 0);
@@ -1516,10 +1831,10 @@ const VendorDashboard = () => {
                       <nav className="space-y-2">
                         {[
                           { id: 'overview', label: 'Overview', icon: Store },
-                          { id: 'brand', label: 'Brand', icon: ShieldCheck },
-                          { id: 'campaigns', label: 'Campaigns', icon: BadgeCheck },
                           { id: 'products', label: 'Products', icon: Package },
+                          { id: 'campaigns', label: 'Campaigns & QR', icon: BadgeCheck },
                           { id: 'wallet', label: 'Wallet', icon: Wallet },
+                          { id: 'brand', label: 'Profile Settings', icon: ShieldCheck },
                           { id: 'scan', label: 'Scan & Redeem', icon: ScanLine },
                         ].map((item) => {
                           const isActive = activeTab === item.id;
@@ -1589,6 +1904,21 @@ const VendorDashboard = () => {
                     {/* Stats Row */}
                     {activeTab === 'overview' && (
                       <div className="space-y-6">
+                        <div className="flex flex-wrap items-center justify-end gap-2 text-xs text-gray-400 pr-6">
+                          <span className="text-gray-500">Campaign</span>
+                          <select
+                            value={overviewCampaignId}
+                            onChange={(event) => setOverviewCampaignId(event.target.value)}
+                            className="mr-2 min-w-[180px] max-w-[240px] rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#0f0f0f] px-3 py-1.5 text-xs text-gray-900 dark:text-white"
+                          >
+                            {overviewCampaignOptions.map((option) => (
+                              <option key={option.id} value={option.id}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
                         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
                           {/* Wallet Balance Card */}
                           <div className="bg-white dark:bg-[#1a1a1a] rounded-xl border border-gray-100 dark:border-gray-800 p-5 overflow-hidden shadow-sm dark:shadow-none">
@@ -1613,7 +1943,7 @@ const VendorDashboard = () => {
                             <div className="flex justify-between items-start mb-2">
                               <div className="overflow-hidden">
                                 <div className="text-2xl xl:text-3xl font-bold text-gray-900 dark:text-white mb-1 truncate">
-                                  {campaigns.length}
+                                  {overviewSelectedCampaignCount}
                                 </div>
                                 <div className="text-xs text-gray-500">Total Campaigns</div>
                               </div>
@@ -1621,9 +1951,10 @@ const VendorDashboard = () => {
                                 <BadgeCheck className="h-5 w-5 xl:h-6 xl:w-6 text-purple-400" />
                               </div>
                             </div>
-                            <div className="flex items-center gap-1 text-xs">
-                              <span className="text-emerald-400">+10.9%</span>
-                              <span className="text-gray-500">vs last month</span>
+                            <div className="flex items-center gap-1 text-xs text-gray-500">
+                              <span>Selected: {overviewSelectedCampaignCount}</span>
+                              <span className="text-gray-400">•</span>
+                              <span>All: {campaigns.length}</span>
                             </div>
                           </div>
 
@@ -1631,7 +1962,7 @@ const VendorDashboard = () => {
                             <div className="flex justify-between items-start mb-2">
                               <div className="overflow-hidden">
                                 <div className="text-2xl xl:text-3xl font-bold text-gray-900 dark:text-white mb-1 truncate">
-                                  {qrStats.total}
+                                  {overviewSelectedQrTotal}
                                 </div>
                                 <div className="text-xs text-gray-500">Total QR Codes</div>
                               </div>
@@ -1639,9 +1970,10 @@ const VendorDashboard = () => {
                                 <QrCode className="h-5 w-5 xl:h-6 xl:w-6 text-emerald-400" />
                               </div>
                             </div>
-                            <div className="flex items-center gap-1 text-xs">
-                              <span className="text-red-400">-3.9%</span>
-                              <span className="text-gray-500">vs last month</span>
+                            <div className="flex items-center gap-1 text-xs text-gray-500">
+                              <span>Selected: {overviewSelectedQrTotal}</span>
+                              <span className="text-gray-400">•</span>
+                              <span>All: {qrStats.total}</span>
                             </div>
                           </div>
 
@@ -1649,7 +1981,7 @@ const VendorDashboard = () => {
                             <div className="flex justify-between items-start mb-2">
                               <div className="overflow-hidden">
                                 <div className="text-2xl xl:text-3xl font-bold text-gray-900 dark:text-white mb-1 truncate">
-                                  {qrStats.redeemed}
+                                  {overviewSelectedQrRedeemed}
                                 </div>
                                 <div className="text-xs text-gray-500">QRs Redeemed</div>
                               </div>
@@ -1657,83 +1989,19 @@ const VendorDashboard = () => {
                                 <Store className="h-5 w-5 xl:h-6 xl:w-6 text-pink-400" />
                               </div>
                             </div>
-                            <div className="flex items-center gap-1 text-xs">
-                              <span className="text-emerald-400">+5.9%</span>
-                              <span className="text-gray-500">vs last month</span>
+                            <div className="flex items-center gap-1 text-xs text-gray-500">
+                              <span>Selected: {overviewSelectedQrRedeemed}</span>
+                              <span className="text-gray-400">•</span>
+                              <span>All: {qrStats.redeemed}</span>
                             </div>
                           </div>
                         </div>
 
-
-                        {/* Analytics Graphs */}
-                        <VendorAnalytics />
-
-                        <div className="bg-white dark:bg-[#1a1a1a] rounded-xl border border-gray-100 dark:border-gray-800 p-5 overflow-hidden shadow-sm dark:shadow-none">
-                          <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
-                            <div className="flex items-center gap-2">
-                              <div className="h-8 w-8 rounded-full bg-emerald-600/20 flex items-center justify-center">
-                                <QrCode size={16} className="text-emerald-400" />
-                              </div>
-                              <div>
-                                <div className="text-base font-bold text-gray-900 dark:text-white">Campaign QR status</div>
-                                <div className="text-xs text-gray-500">
-                                  Review QR usage by campaign.
-                                </div>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2 text-xs text-gray-400">
-                              <span className="text-gray-500">Campaign</span>
-                              <select
-                                value={overviewCampaignId}
-                                onChange={(event) => setOverviewCampaignId(event.target.value)}
-                                className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#0f0f0f] px-3 py-1.5 text-xs text-gray-900 dark:text-white"
-                              >
-                                {overviewCampaignOptions.map((option) => (
-                                  <option key={option.id} value={option.id}>
-                                    {option.label}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                          </div>
-
-                          <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3">
-                            {[
-                              { key: "total", label: "Total" },
-                              { key: "generated", label: "Generated" },
-                              { key: "assigned", label: "Assigned" },
-                              { key: "active", label: "Active" },
-                              { key: "redeemed", label: "Redeemed" },
-                              { key: "expired", label: "Expired" },
-                              { key: "blocked", label: "Blocked" },
-                            ].map((item) => {
-                              const value = overviewQrStatusCounts[item.key] ?? 0;
-                              const tone =
-                                item.key === "total"
-                                  ? "text-gray-900 dark:text-white"
-                                  : getStatusClasses(item.key);
-                              return (
-                                <div
-                                  key={item.key}
-                                  className="rounded-lg border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-[#0f0f0f] p-3"
-                                >
-                                  <div className="text-xs text-gray-500">{item.label}</div>
-                                  <div className={`mt-1 text-lg font-bold ${tone}`}>{value}</div>
-                                </div>
-                              );
-                            })}
-                          </div>
-
-                          <div className="mt-3 flex items-center justify-between text-[11px] text-gray-500">
-                            <span>
-                              {overviewFilteredQrs.length} QR
-                              {overviewFilteredQrs.length !== 1 ? "s" : ""} tracked
-                            </span>
-                            {overviewQrStatusCounts.unknown > 0 && (
-                              <span>{overviewQrStatusCounts.unknown} with unknown status</span>
-                            )}
-                          </div>
-                        </div>
+                        <VendorAnalytics
+                          redemptionSeries={overviewRedemptionSeries}
+                          campaignSeries={campaignPerformanceSeries}
+                          selectionLabel={overviewCampaignLabel}
+                        />
 
                         <div id="overview" className="bg-white dark:bg-[#1a1a1a] rounded-xl border border-gray-100 dark:border-gray-800 p-5 shadow-sm dark:shadow-none">
                           <div className="flex items-center justify-between mb-4">
@@ -1803,12 +2071,20 @@ const VendorDashboard = () => {
 
                     {activeTab === 'brand' && (
                       <div className="bg-white dark:bg-[#1a1a1a] rounded-xl border border-gray-100 dark:border-gray-800 p-5 shadow-sm dark:shadow-none" id="brand">
-                        <div className="flex items-center gap-2 text-base font-bold text-gray-900 dark:text-white mb-1">
-                          <Store size={18} className="text-emerald-400" />
-                          Brand details
+                        <div className="flex items-center justify-between mb-4">
+                          <div className="flex items-center gap-2 text-base font-bold text-gray-900 dark:text-white">
+                            <Store size={18} className="text-emerald-400" />
+                            Profile & Brand Settings
+                          </div>
+                          <button
+                            onClick={() => alert("To change sensitive brand or company information, please contact administrator approval.")}
+                            className="text-xs bg-amber-50 text-amber-600 px-3 py-1.5 rounded-lg font-medium hover:bg-amber-100 transition-colors border border-amber-200"
+                          >
+                            Request Change
+                          </button>
                         </div>
-                        <div className="text-xs text-gray-500">
-                          Brand access and subscription are managed by the admin.
+                        <div className="text-xs text-gray-500 mb-4 bg-gray-50 dark:bg-white/5 p-3 rounded-lg border border-gray-100 dark:border-white/10">
+                          <span className="font-semibold text-gray-700 dark:text-gray-300">Note:</span> Brand Identity information is verified by admin. You cannot edit it directly.
                         </div>
                         <div className="grid grid-cols-2 gap-3">
                           <div>
@@ -1919,9 +2195,10 @@ const VendorDashboard = () => {
                           type="button"
                           onClick={handleRegistrationSave}
                           disabled={isSavingRegistration}
-                          className="w-full rounded-xl bg-primary text-white text-sm font-semibold py-2 shadow-md disabled:opacity-60"
+                          className="w-full rounded-xl bg-gray-100 text-gray-400 text-sm font-semibold py-2 shadow-none cursor-not-allowed border border-gray-200"
+                          title="Contact admin to update company details"
                         >
-                          {isSavingRegistration ? "Saving..." : "Save company profile"}
+                          Updates disabled (Admin Entry Only)
                         </button>
                         {registrationStatus && (
                           <div className="text-xs text-green-600 font-semibold">{registrationStatus}</div>
@@ -1962,22 +2239,22 @@ const VendorDashboard = () => {
                             Create Campaign
                           </button>
                           <button
-                            onClick={() => setCampaignTab('active')}
-                            className={`px-4 py-2 text-sm font-semibold transition-colors ${campaignTab === 'active'
-                              ? 'border-b-2 border-primary text-primary'
-                              : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
-                              }`}
-                          >
-                            Active Campaigns ({campaigns.filter(c => c.status === 'active').length})
-                          </button>
-                          <button
                             onClick={() => setCampaignTab('pending')}
                             className={`px-4 py-2 text-sm font-semibold transition-colors ${campaignTab === 'pending'
                               ? 'border-b-2 border-primary text-primary'
                               : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
                               }`}
                           >
-                            Pending Campaigns ({campaigns.filter(c => c.status === 'pending').length})
+                            Pending Campaigns ({pendingCampaigns.length})
+                          </button>
+                          <button
+                            onClick={() => setCampaignTab('active')}
+                            className={`px-4 py-2 text-sm font-semibold transition-colors ${campaignTab === 'active'
+                              ? 'border-b-2 border-primary text-primary'
+                              : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+                              }`}
+                          >
+                            Active Campaigns ({activeCampaigns.length})
                           </button>
                         </div>
                         {/* Create Campaign Tab */}
@@ -2054,8 +2331,8 @@ const VendorDashboard = () => {
                                       type="number"
                                       min="0"
                                       step="0.01"
-                                      value={row.totalBudget}
-                                      onChange={(e) => handleCampaignRowChange(row.id, "totalBudget", e.target.value)}
+                                      value={formatAllocationTotal(row)}
+                                      readOnly
                                       placeholder="Total"
                                       className="w-full rounded-lg border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-2 py-1.5 text-sm text-gray-900 dark:text-gray-100"
                                     />
@@ -2073,61 +2350,28 @@ const VendorDashboard = () => {
                                 </div>
                               ))}
                               <button
-                                type="button"
-                                onClick={handleAddCampaignRow}
-                                className="text-xs font-semibold text-primary hover:text-primary-strong flex items-center gap-1"
-                              >
-                                <Plus size={14} />
-                                Add another allocation
-                              </button>
+                                    type="button"
+                                    onClick={handleAddCampaignRow}
+                                    className="text-xs font-semibold text-primary hover:text-primary-strong flex items-center gap-1"
+                                  >
+                                    <Plus size={14} />
+                                    Add another allocation
+                                  </button>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-3">
-                              <div className="space-y-2">
-                                <label className="text-xs font-semibold text-gray-500 dark:text-gray-400">
-                                  Start date
-                                </label>
-                                <div className="relative">
-                                  <input
-                                    ref={campaignStartDateRef}
-                                    type="date"
-                                    value={campaignForm.startDate}
-                                    onChange={handleCampaignChange("startDate")}
-                                    className="w-full appearance-none rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 pr-10 text-sm text-gray-900 dark:text-gray-100"
-                                  />
-                                  <button
-                                    type="button"
-                                    onClick={() => openDatePicker(campaignStartDateRef)}
-                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-                                    aria-label="Open start date calendar"
-                                  >
-                                    <Calendar size={16} />
-                                  </button>
-                                </div>
-                              </div>
-                              <div className="space-y-2">
-                                <label className="text-xs font-semibold text-gray-500 dark:text-gray-400">
-                                  End date
-                                </label>
-                                <div className="relative">
-                                  <input
-                                    ref={campaignEndDateRef}
-                                    type="date"
-                                    value={campaignForm.endDate}
-                                    onChange={handleCampaignChange("endDate")}
-                                    className="w-full appearance-none rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 pr-10 text-sm text-gray-900 dark:text-gray-100"
-                                  />
-                                  <button
-                                    type="button"
-                                    onClick={() => openDatePicker(campaignEndDateRef)}
-                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-                                    aria-label="Open end date calendar"
-                                  >
-                                    <Calendar size={16} />
-                                  </button>
-                                </div>
-                              </div>
+                            <div className="flex items-center justify-between rounded-lg border border-gray-200 dark:border-zinc-800 bg-gray-50/60 dark:bg-zinc-900/40 px-3 py-2 text-xs">
+                              <span className="text-gray-500 dark:text-gray-400">
+                                Subtotal ({campaignAllocationSummary.quantity} QRs)
+                              </span>
+                              <span className="font-semibold text-gray-900 dark:text-gray-100">
+                                ₹{formatAmount(campaignAllocationSummary.subtotal)}
+                              </span>
                             </div>
+
+                            <div className="text-[10px] text-gray-500 dark:text-gray-400">
+                              Campaign dates follow your subscription window.
+                            </div>
+
                             <button
                               type="button"
                               onClick={handleCreateCampaign}
@@ -2148,7 +2392,7 @@ const VendorDashboard = () => {
                         {/* Active Campaigns Tab */}
                         {campaignTab === 'active' && (
                           <div className="space-y-4">
-                            {/* Generate QRs Section */}
+                            {showQrGenerator && (
                             <div className="rounded-xl border border-gray-100 dark:border-zinc-800 p-4 space-y-3">
                               <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-2 text-sm font-semibold text-gray-800 dark:text-gray-200">
@@ -2170,7 +2414,7 @@ const VendorDashboard = () => {
                                     className="w-full rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-gray-900 dark:text-gray-100"
                                   >
                                     <option value="">Select campaign</option>
-                                    {campaigns.filter((campaign) => campaign.status === "active").map((campaign) => (
+                                    {activeCampaigns.map((campaign) => (
                                       <option key={campaign.id} value={campaign.id}>
                                         {campaign.title}
                                       </option>
@@ -2217,7 +2461,7 @@ const VendorDashboard = () => {
                                     <div className="text-sm font-bold text-emerald-400">Order Invoice</div>
                                     <div className="text-xs text-gray-400">{format(new Date(lastBatchSummary.timestamp), "PPP p")}</div>
                                   </div>
-                                  <div className="grid gap-3 sm:grid-cols-3">
+                                  <div className="grid gap-3 sm:grid-cols-2">
                                     <div>
                                       <div className="text-[10px] uppercase tracking-wide text-gray-500">Campaign</div>
                                       <div className="text-sm font-semibold text-gray-900 dark:text-white">{lastBatchSummary.campaignTitle}</div>
@@ -2226,26 +2470,20 @@ const VendorDashboard = () => {
                                       <div className="text-[10px] uppercase tracking-wide text-gray-500">Quantity</div>
                                       <div className="text-sm font-semibold text-gray-900 dark:text-white">{lastBatchSummary.totalQrs || 0} QRs</div>
                                     </div>
-                                    <div>
-                                      <div className="text-[10px] uppercase tracking-wide text-gray-500">Print Cost (₹1 × {lastBatchSummary.totalQrs})</div>
-                                      <div className="text-lg font-bold text-cyan-400">₹{lastBatchSummary.totalQrs || 0}</div>
-                                    </div>
                                   </div>
                                   <div className="border-t border-emerald-600/30 pt-3 flex items-center justify-between gap-3">
                                     <div className="text-xs text-gray-400">
-                                      Admin will ship the QR codes to you after payment confirmation.
+                                      Payment recorded. Admin will ship the QR codes after processing.
                                     </div>
                                     <div className="flex items-center gap-2">
                                       <button
                                         type="button"
                                         onClick={() => {
-                                          const printCost = lastBatchSummary.totalQrs || 0;
                                           const invoiceData = {
                                             id: lastBatchSummary.id,
                                             date: lastBatchSummary.timestamp,
                                             campaign: lastBatchSummary.campaignTitle,
                                             quantity: lastBatchSummary.totalQrs,
-                                            printCost: printCost,
                                           };
                                           const invoiceText = `
 INVOICE #${invoiceData.id}
@@ -2253,9 +2491,7 @@ Date: ${format(new Date(invoiceData.date), "PPP p")}
 ----------------------------------------
 Campaign: ${invoiceData.campaign}
 Quantity: ${invoiceData.quantity} QRs
-Print Cost: ₹${invoiceData.printCost}
 ----------------------------------------
-Total Amount: ₹${invoiceData.printCost}
                                       `.trim();
                                           const blob = new Blob([invoiceText], { type: 'text/plain' });
                                           const url = URL.createObjectURL(blob);
@@ -2269,86 +2505,100 @@ Total Amount: ₹${invoiceData.printCost}
                                       >
                                         Download Invoice
                                       </button>
-                                      <button
-                                        type="button"
-                                        onClick={async () => {
-                                          const printCost = lastBatchSummary.totalQrs || 0;
-                                          if (walletBalance < printCost) {
-                                            setQrOrderError(`Insufficient balance. Need ₹${printCost}, have ₹${walletBalance.toFixed(2)}`);
-                                            return;
-                                          }
-                                          setQrOrderStatus("Processing payment...");
-                                          try {
-                                            // Deduct print cost from wallet
-                                            // Note: This would need a backend API to process payment
-                                            setQrOrderStatus(`Payment of ₹${printCost} confirmed! Admin notified.`);
-                                            setLastBatchSummary(null); // Clear invoice after payment
-                                            await loadWallet();
-                                          } catch (err) {
-                                            setQrOrderError(err.message || "Payment failed");
-                                          }
-                                        }}
-                                        className="text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 px-4 py-1.5 rounded-lg shadow-lg"
-                                      >
-                                        Pay ₹{lastBatchSummary.totalQrs || 0}
-                                      </button>
                                     </div>
                                   </div>
                                 </div>
                               )}
                             </div>
+                            )}
 
                             <div className="space-y-2">
-                              {campaigns.filter(c => c.status === 'active').length === 0 ? (
+                              {activeCampaigns.length === 0 ? (
                                 <div className="text-xs text-center text-gray-500 py-4">No active campaigns found.</div>
                               ) : (
-                                campaigns.filter(c => c.status === 'active').map((campaign) => (
-                                  <div
-                                    key={campaign.id}
-                                    className="flex items-center justify-between rounded-xl border border-gray-100 dark:border-zinc-800 px-3 py-2"
-                                  >
-                                    <div>
-                                      <div className="text-xs font-semibold text-gray-700 dark:text-gray-300">
-                                        {campaign.title}
+                                activeCampaigns.map((campaign) => {
+                                  const allocationGroups = buildAllocationGroups(campaign.allocations);
+                                  const totalQty = allocationGroups.reduce((sum, group) => sum + group.quantity, 0);
+                                  const fallbackBudget = allocationGroups.reduce(
+                                    (sum, group) => sum + group.totalBudget,
+                                    0
+                                  );
+                                  const totalBudget = parseNumericValue(
+                                    campaign.subtotal,
+                                    parseNumericValue(campaign.totalBudget, fallbackBudget)
+                                  );
+                                  const stats = campaignQrMap.get(campaign.id);
+                                  const activeCount = stats?.stats.active || 0;
+                                  const redeemedCount = stats?.stats.redeemed || 0;
+                                  const totalCount = stats?.stats.total || totalQty;
+
+                                  return (
+                                    <div
+                                      key={campaign.id}
+                                      className="rounded-2xl border border-gray-200/70 dark:border-zinc-800 bg-white/80 dark:bg-zinc-950/60 px-4 py-4 shadow-sm transition-colors transition-shadow hover:border-emerald-500/40 hover:shadow-md"
+                                    >
+                                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                        <div className="space-y-1">
+                                          <div className="flex items-center gap-2">
+                                            <div className="text-base font-semibold text-gray-900 dark:text-white">
+                                              {campaign.title}
+                                            </div>
+                                            <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 text-[10px] font-semibold uppercase tracking-wide">
+                                              Active
+                                            </span>
+                                          </div>
+                                          <div className="text-[11px] text-gray-500 dark:text-gray-400">
+                                            ID: {campaign.id.slice(0, 10)}...
+                                          </div>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                          <button
+                                            type="button"
+                                            onClick={() => setSelectedActiveCampaign(campaign)}
+                                            className="px-3 py-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 text-[11px] font-semibold hover:bg-emerald-500/20 transition-colors"
+                                          >
+                                            View Details
+                                          </button>
+                                        </div>
                                       </div>
-                                      <div className="text-[10px] text-gray-500 dark:text-gray-400">
-                                        INR {formatAmount(campaign.cashbackAmount)} - {campaign.status}
+                                      <div className="grid gap-2 sm:grid-cols-4">
+                                        <div className="rounded-lg border border-gray-100 dark:border-zinc-800 bg-gray-50/80 dark:bg-zinc-900/60 px-3 py-2">
+                                          <div className="text-[10px] uppercase tracking-wide text-gray-500">Budget</div>
+                                          <div className="text-sm font-semibold text-gray-900 dark:text-white">
+                                            ₹{formatAmount(totalBudget)}
+                                          </div>
+                                        </div>
+                                        <div className="rounded-lg border border-gray-100 dark:border-zinc-800 bg-gray-50/80 dark:bg-zinc-900/60 px-3 py-2">
+                                          <div className="text-[10px] uppercase tracking-wide text-gray-500">Total QRs</div>
+                                          <div className="text-sm font-semibold text-gray-900 dark:text-white">
+                                            {totalCount || 0}
+                                          </div>
+                                        </div>
+                                        <div className="rounded-lg border border-gray-100 dark:border-zinc-800 bg-gray-50/80 dark:bg-zinc-900/60 px-3 py-2">
+                                          <div className="text-[10px] uppercase tracking-wide text-gray-500">Active</div>
+                                          <div className="text-sm font-semibold text-gray-900 dark:text-white">
+                                            {activeCount}
+                                          </div>
+                                        </div>
+                                        <div className="rounded-lg border border-gray-100 dark:border-zinc-800 bg-gray-50/80 dark:bg-zinc-900/60 px-3 py-2">
+                                          <div className="text-[10px] uppercase tracking-wide text-gray-500">Redeemed</div>
+                                          <div className="text-sm font-semibold text-gray-900 dark:text-white">
+                                            {redeemedCount}
+                                          </div>
+                                        </div>
                                       </div>
-                                    </div>
-                                    <div className="flex flex-col items-end gap-1">
-                                      <div className="text-[10px] text-gray-500 dark:text-gray-400">
-                                        {campaign.id.slice(0, 10)}...
-                                      </div>
-                                      <div className="flex items-center gap-2 text-[10px] font-semibold">
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            setCampaignId(campaign.id);
-                                            setSelectedQrCampaign(campaign.id);
-                                          }}
-                                          className="text-primary-strong dark:text-primary"
-                                        >
-                                          Use
-                                        </button>
+                                      <div className="flex items-center gap-3 text-[11px] font-semibold">
                                         <button
                                           type="button"
                                           onClick={() => handleCopyCampaignId(campaign.id)}
-                                          className="text-gray-600 dark:text-gray-300"
+                                          className="text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-colors"
                                         >
                                           Copy ID
                                         </button>
-                                        <button
-                                          type="button"
-                                          onClick={() => handleDeleteCampaign(campaign.id)}
-                                          disabled={deletingCampaignId === campaign.id}
-                                          className="text-rose-500 hover:text-rose-400 disabled:opacity-60"
-                                        >
-                                          {deletingCampaignId === campaign.id ? "Deleting..." : "Delete"}
-                                        </button>
                                       </div>
                                     </div>
-                                  </div>
-                                ))
+                                  );
+                                })
                               )}
                             </div>
                           </div>
@@ -2356,48 +2606,101 @@ Total Amount: ₹${invoiceData.printCost}
 
                         {/* Pending Campaigns Tab */}
                         {campaignTab === 'pending' && (
-                          <div className="space-y-2">
-                            {campaigns.filter(c => c.status === 'pending').length === 0 ? (
+                          <div className="space-y-4">
+                            {pendingCampaigns.length === 0 ? (
                               <div className="text-xs text-center text-gray-500 py-4">No pending campaigns found.</div>
                             ) : (
-                              campaigns.filter(c => c.status === 'pending').map((campaign) => (
-                                <div
-                                  key={campaign.id}
-                                  onClick={() => setSelectedPendingCampaign(campaign)}
-                                  className="flex items-center justify-between rounded-xl border border-gray-100 dark:border-zinc-800 px-3 py-2 cursor-pointer hover:border-primary/50 transition-colors"
-                                >
-                                  <div>
-                                    <div className="text-xs font-semibold text-gray-700 dark:text-gray-300">
-                                      {campaign.title}
+                              pendingCampaigns.map((campaign) => {
+                                const allocationGroups = buildAllocationGroups(campaign.allocations);
+                                const totalQty = allocationGroups.reduce((sum, group) => sum + group.quantity, 0);
+                                const fallbackBudget = allocationGroups.reduce(
+                                  (sum, group) => sum + group.totalBudget,
+                                  0
+                                );
+                                const totalBudget = parseNumericValue(
+                                  campaign.subtotal,
+                                  parseNumericValue(campaign.totalBudget, fallbackBudget)
+                                );
+                                return (
+                                  <div
+                                    key={campaign.id}
+                                    className="rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden"
+                                  >
+                                    <div className="bg-gradient-to-r from-amber-600/20 to-amber-600/10 px-4 py-3">
+                                      <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-3">
+                                          <Megaphone size={18} className="text-amber-400" />
+                                          <div>
+                                            <span className="text-base font-bold text-gray-900 dark:text-white">
+                                              {campaign.title}
+                                            </span>
+                                          </div>
+                                        </div>
+                                        <div className="flex items-center gap-2 text-xs">
+                                          <span className="px-2 py-1 rounded-full bg-amber-600/20 text-amber-400 font-semibold">
+                                            Pending
+                                          </span>
+                                          <button
+                                            type="button"
+                                            onClick={() => setSelectedPendingCampaign(campaign)}
+                                            className="px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400 font-semibold hover:bg-emerald-500/30 transition-colors"
+                                          >
+                                            Request Print
+                                          </button>
+                                        </div>
+                                      </div>
                                     </div>
-                                    <div className="text-[10px] text-gray-500 dark:text-gray-400">
-                                      INR {formatAmount(campaign.cashbackAmount)} - {campaign.status}
+
+                                    <div className="bg-gray-50 dark:bg-[#0f0f0f] divide-y divide-gray-200 dark:divide-gray-800">
+                                      {allocationGroups.length === 0 ? (
+                                        <div className="p-4 text-xs text-gray-500">
+                                          No allocations configured yet.
+                                        </div>
+                                      ) : (
+                                        allocationGroups.map((group) => {
+                                          const groupKey = `${campaign.id}-${group.price.toFixed(2)}`;
+                                          return (
+                                            <div key={groupKey} className="p-4">
+                                              <div className="flex items-center">
+                                                <div className="flex items-center gap-4">
+                                                  <div>
+                                                    <div className="text-xs text-gray-500">Cashback Amount</div>
+                                                    <div className="text-lg font-bold text-emerald-400">
+                                                      ₹{formatAmount(group.price)}
+                                                    </div>
+                                                  </div>
+                                                  <div>
+                                                    <div className="text-xs text-gray-500">Quantity</div>
+                                                    <div className="text-lg font-bold text-gray-900 dark:text-white">
+                                                      {group.quantity} QRs
+                                                    </div>
+                                                  </div>
+                                                </div>
+                                              </div>
+                                            </div>
+                                          );
+                                        })
+                                      )}
+                                    </div>
+
+                                    <div className="px-4 py-3 text-[10px] text-gray-500 flex flex-wrap items-center justify-between gap-2 bg-white dark:bg-[#0f0f0f]">
+                                      <span>
+                                        Total: {totalQty} QR{totalQty !== 1 ? "s" : ""} - Budget ₹
+                                        {formatAmount(totalBudget)}
+                                      </span>
+                                      <div className="flex items-center gap-3">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleCopyCampaignId(campaign.id)}
+                                          className="text-gray-600 dark:text-gray-300 font-semibold"
+                                        >
+                                          Copy ID
+                                        </button>
+                                      </div>
                                     </div>
                                   </div>
-                                  <div className="flex flex-col items-end gap-1">
-                                    <div className="text-[10px] text-gray-500 dark:text-gray-400">
-                                      {campaign.id.slice(0, 10)}...
-                                    </div>
-                                    <div className="flex items-center gap-2 text-[10px] font-semibold">
-                                      <button
-                                        type="button"
-                                        onClick={() => handleCopyCampaignId(campaign.id)}
-                                        className="text-gray-600 dark:text-gray-300"
-                                      >
-                                        Copy ID
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleDeleteCampaign(campaign.id)}
-                                        disabled={deletingCampaignId === campaign.id}
-                                        className="text-rose-500 hover:text-rose-400 disabled:opacity-60"
-                                      >
-                                        {deletingCampaignId === campaign.id ? "Deleting..." : "Delete"}
-                                      </button>
-                                    </div>
-                                  </div>
-                                </div>
-                              ))
+                                );
+                              })
                             )}
                           </div>
                         )}
@@ -2521,21 +2824,157 @@ Total Amount: ₹${invoiceData.printCost}
                           </div>
                         )}
 
+                        {/* Active Campaign Details Modal */}
+                        {activeCampaignDetails && activeCampaign && (
+                          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+                            <div className="bg-white dark:bg-zinc-900 rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl border border-gray-100 dark:border-zinc-800">
+                              <div className="p-6 space-y-6">
+                                <div className="flex items-center justify-between">
+                                  <div>
+                                    <h3 className="text-xl font-bold text-gray-900 dark:text-white">
+                                      {activeCampaign.title}
+                                    </h3>
+                                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                                      {formatShortDate(activeCampaign.startDate)} - {formatShortDate(activeCampaign.endDate)}
+                                    </p>
+                                  </div>
+                                  <button
+                                    onClick={() => setSelectedActiveCampaign(null)}
+                                    className="p-2 hover:bg-gray-100 dark:hover:bg-zinc-800 rounded-full transition-colors"
+                                  >
+                                    <X size={20} className="text-gray-500" />
+                                  </button>
+                                </div>
+
+                                <div className="flex flex-wrap items-center gap-2 text-[10px] text-gray-500 dark:text-gray-400">
+                                  <span className="px-3 py-1 rounded-full bg-emerald-500/15 text-emerald-400 font-semibold">
+                                    Active
+                                  </span>
+                                  <span>ID: {activeCampaign.id}</span>
+                                  {activeCampaignDetails.product && (
+                                    <span>
+                                      Product: {activeCampaignDetails.product.name}
+                                      {activeCampaignDetails.product.variant ? ` - ${activeCampaignDetails.product.variant}` : ""}
+                                    </span>
+                                  )}
+                                </div>
+
+                                {activeCampaign.description && (
+                                  <div className="text-sm text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-zinc-800/50 p-3 rounded-xl border border-gray-100 dark:border-zinc-800">
+                                    {activeCampaign.description}
+                                  </div>
+                                )}
+
+                                <div className="grid gap-3 sm:grid-cols-3">
+                                  <div className="rounded-xl border border-gray-100 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800/40 p-3">
+                                    <div className="text-[10px] uppercase tracking-wide text-gray-500">Budget</div>
+                                    <div className="text-lg font-bold text-gray-900 dark:text-white">
+                                      ₹{formatAmount(activeCampaignDetails.totalBudget)}
+                                    </div>
+                                  </div>
+                                  <div className="rounded-xl border border-gray-100 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800/40 p-3">
+                                    <div className="text-[10px] uppercase tracking-wide text-gray-500">Total QRs</div>
+                                    <div className="text-lg font-bold text-gray-900 dark:text-white">
+                                      {activeCampaignDetails.stats?.stats.total || activeCampaignDetails.totalQty || 0}
+                                    </div>
+                                  </div>
+                                  <div className="rounded-xl border border-gray-100 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800/40 p-3">
+                                    <div className="text-[10px] uppercase tracking-wide text-gray-500">Redeemed</div>
+                                    <div className="text-lg font-bold text-emerald-500">
+                                      {activeCampaignDetails.stats?.stats.redeemed || 0}
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="text-xs text-gray-500 dark:text-gray-400">
+                                  Active QRs: {activeCampaignDetails.stats?.stats.active || 0} - Redeemed:{" "}
+                                  {activeCampaignDetails.stats?.stats.redeemed || 0}
+                                </div>
+
+                                <div>
+                                  <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+                                    <Package size={16} className="text-primary" />
+                                    {activeCampaignDetails.stats?.stats.total ? "QR Breakdown" : "Allocation Breakdown"}
+                                  </h4>
+                                  <div className="border border-gray-100 dark:border-zinc-800 rounded-xl overflow-hidden">
+                                    <table className="w-full text-left text-sm">
+                                      <thead className="bg-gray-50 dark:bg-zinc-800/50 text-xs uppercase text-gray-500 font-medium">
+                                        <tr>
+                                          <th className="px-4 py-3">Cashback</th>
+                                          <th className="px-4 py-3 text-center">Qty</th>
+                                          <th className="px-4 py-3 text-center">Active</th>
+                                          <th className="px-4 py-3 text-center">Redeemed</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-gray-100 dark:divide-zinc-800">
+                                        {activeCampaignDetails.breakdownRows.map((row, idx) => (
+                                          <tr key={`${activeCampaign.id}-${idx}`} className="bg-white dark:bg-zinc-900">
+                                            <td className="px-4 py-3 text-gray-600 dark:text-gray-300">
+                                              ₹{formatAmount(row.cashback)}
+                                            </td>
+                                            <td className="px-4 py-3 text-center text-gray-600 dark:text-gray-300">
+                                              {row.quantity}
+                                            </td>
+                                            <td className="px-4 py-3 text-center text-gray-600 dark:text-gray-300">
+                                              {row.active || 0}
+                                            </td>
+                                            <td className="px-4 py-3 text-center text-gray-600 dark:text-gray-300">
+                                              {row.redeemed || 0}
+                                            </td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-3 pt-2">
+                                  <button
+                                    onClick={() => setSelectedActiveCampaign(null)}
+                                    className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 dark:border-zinc-700 text-gray-700 dark:text-gray-300 font-semibold hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors"
+                                  >
+                                    Close
+                                  </button>
+                                  <button
+                                    onClick={() => handleCopyCampaignId(activeCampaign.id)}
+                                    className="flex-1 px-4 py-2.5 rounded-xl bg-black dark:bg-white text-white dark:text-black font-semibold hover:opacity-90 transition-opacity"
+                                  >
+                                    Copy Campaign ID
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {showQrOrdersSection && (
                         <div className="bg-white dark:bg-[#1a1a1a] rounded-xl border border-gray-100 dark:border-gray-800 p-5 shadow-sm dark:shadow-none space-y-4" id="qr-inventory">
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2 text-base font-bold text-white">
                               <ClipboardCheck size={18} className="text-emerald-400" />
                               QR Orders
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => loadQrs()}
-                              disabled={isLoadingQrs}
-                              className="flex items-center gap-1 text-xs font-semibold text-gray-400 hover:text-white"
-                            >
-                              <RefreshCw size={12} />
-                              Refresh
-                            </button>
+                            <div className="flex items-center gap-2">
+                              {qrHasMore && (
+                                <button
+                                  type="button"
+                                  onClick={() => loadQrs(token, { page: qrPage + 1, append: true })}
+                                  disabled={isLoadingQrs}
+                                  className="flex items-center gap-1 text-xs font-semibold text-gray-400 hover:text-white"
+                                >
+                                  <Download size={12} />
+                                  Load more
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => loadQrs(token, { page: 1, append: false })}
+                                disabled={isLoadingQrs}
+                                className="flex items-center gap-1 text-xs font-semibold text-gray-400 hover:text-white"
+                              >
+                                <RefreshCw size={12} />
+                                Refresh
+                              </button>
+                            </div>
                           </div>
                           {isLoadingQrs && (
                             <div className="text-xs text-gray-400">Loading orders...</div>
@@ -2543,6 +2982,61 @@ Total Amount: ₹${invoiceData.printCost}
                           {qrError && <div className="text-xs text-red-500 font-semibold">{qrError}</div>}
                           {!isLoadingQrs && qrs.length === 0 && (
                             <div className="text-xs text-gray-500">No QR orders yet. Generate QRs above.</div>
+                          )}
+                          {showOrderTracking && (
+                            <>
+                              {isLoadingOrders && (
+                                <div className="text-xs text-gray-400">Loading order status...</div>
+                              )}
+                              {ordersError && <div className="text-xs text-red-500 font-semibold">{ordersError}</div>}
+                              {!isLoadingOrders && ordersTotal === 0 && orders.length === 0 && (
+                                <div className="text-xs text-gray-500">No print orders logged yet.</div>
+                              )}
+                              {orders.length > 0 && (
+                                <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
+                                  <table className="w-full text-xs">
+                                    <thead className="bg-gray-100 dark:bg-zinc-800/60 text-gray-500 uppercase text-[10px]">
+                                      <tr>
+                                        <th className="px-3 py-2 text-left">Order</th>
+                                        <th className="px-3 py-2 text-left">Campaign</th>
+                                        <th className="px-3 py-2 text-right">Qty</th>
+                                        <th className="px-3 py-2 text-left">Status</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
+                                      {orders.map((order) => (
+                                        <tr key={order.id}>
+                                          <td className="px-3 py-2 text-gray-700 dark:text-gray-200 font-medium">
+                                            {order.id.slice(0, 8)}...
+                                          </td>
+                                          <td className="px-3 py-2 text-gray-600 dark:text-gray-300">
+                                            {order.campaignTitle || "Campaign"}
+                                          </td>
+                                          <td className="px-3 py-2 text-right text-gray-700 dark:text-gray-200">
+                                            {order.quantity}
+                                          </td>
+                                          <td className="px-3 py-2 text-gray-600 dark:text-gray-300">
+                                            <span className={getStatusClasses(order.status)}>
+                                              {order.status}
+                                            </span>
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )}
+                              {ordersHasMore && (
+                                <button
+                                  type="button"
+                                  onClick={() => loadOrders(token, { page: ordersPage + 1, append: true })}
+                                  disabled={isLoadingOrders}
+                                  className="w-full rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2 text-xs font-semibold text-gray-500 hover:text-white hover:bg-gray-100 dark:hover:bg-zinc-800"
+                                >
+                                  Load more orders
+                                </button>
+                              )}
+                            </>
                           )}
 
                           {/* Order Summary by Campaign */}
@@ -2582,10 +3076,9 @@ Total Amount: ₹${invoiceData.printCost}
                                   <div className="bg-gray-50 dark:bg-[#0f0f0f] divide-y divide-gray-200 dark:divide-gray-800">
                                     {campaign.priceGroups.map((priceGroup) => {
                                       const groupKey = `${campaign.id}-${priceGroup.priceKey ?? priceGroup.price}`;
-                                      const printCost = priceGroup.qrs.length * 1; // ₹1 per QR
                                       return (
                                         <div key={groupKey} className="p-4">
-                                          <div className="flex items-center justify-between">
+                                          <div className="flex items-center">
                                             <div className="flex items-center gap-4">
                                               <div>
                                                 <div className="text-xs text-gray-500">Cashback Amount</div>
@@ -2594,19 +3087,6 @@ Total Amount: ₹${invoiceData.printCost}
                                               <div>
                                                 <div className="text-xs text-gray-500">Quantity</div>
                                                 <div className="text-lg font-bold text-gray-900 dark:text-white">{priceGroup.qrs.length} QRs</div>
-                                              </div>
-                                              <div>
-                                                <div className="text-xs text-gray-500">Print Cost</div>
-                                                <div className="text-lg font-bold text-cyan-400">₹{printCost}</div>
-                                              </div>
-                                            </div>
-                                            <div className="text-right">
-                                              <div className="text-xs text-gray-500">Status</div>
-                                              <div className="text-sm font-semibold text-yellow-400">
-                                                {priceGroup.activeCount > 0 ? 'Shipped' : 'Pending'}
-                                              </div>
-                                              <div className="text-[10px] text-gray-500">
-                                                {priceGroup.activeCount} active · {priceGroup.redeemedCount} redeemed
                                               </div>
                                             </div>
                                           </div>
@@ -2620,12 +3100,16 @@ Total Amount: ₹${invoiceData.printCost}
                           )}
 
                           <div className="text-[10px] text-gray-500 flex items-center justify-between">
-                            <span>Total: {qrs.length} QR{qrs.length !== 1 ? 's' : ''} across {qrsGroupedByCampaign.length} campaign{qrsGroupedByCampaign.length !== 1 ? 's' : ''}</span>
-                            <span>{qrStats.redeemed} redeemed · {qrStats.active} active</span>
+                            <span>
+                              Total: {qrTotalLabel} QR{qrTotalLabel !== 1 ? 's' : ''} across {qrsGroupedByCampaign.length} campaign{qrsGroupedByCampaign.length !== 1 ? 's' : ''}
+                              {qrCoverageLabel ? ` - ${qrCoverageLabel}` : ''}
+                            </span>
+                            <span>{qrStats.redeemed} redeemed - {qrStats.active} active</span>
                           </div>
+                          {qrActionStatus && (
+                            <div className="text-xs text-green-600 font-semibold">{qrActionStatus}</div>
+                          )}
                         </div>
-                        {qrActionStatus && (
-                          <div className="text-xs text-green-600 font-semibold">{qrActionStatus}</div>
                         )}
                       </div>
                     )}

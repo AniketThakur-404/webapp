@@ -1,39 +1,63 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { BadgeCheck, ChevronRight, Globe, Mail, MessageCircle, Search } from 'lucide-react';
-import { brandCatalog, productCatalog } from '../data/catalog';
 import FallbackImage from '../components/FallbackImage';
 import HowItWorks from '../components/HowItWorks';
-
-const titleFromSlug = (slug) => {
-  if (!slug) return 'Brand';
-  return slug
-    .split('-')
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
-};
+import { getPublicBrandDetails, getPublicBrands } from '../lib/api';
 
 const BrandDetails = () => {
   const { id } = useParams();
-  const brandMatch = brandCatalog.find((brand) => brand.id === id);
-  const brand = brandMatch || brandCatalog[0];
-  const brandId = brand?.id;
-
+  const [brandData, setBrandData] = useState(null);
+  const [brandError, setBrandError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
   const [query, setQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState('All');
 
   useEffect(() => {
+    let isMounted = true;
+
+    const loadBrand = async () => {
+      setIsLoading(true);
+      setBrandError('');
+      try {
+        let targetId = id;
+        if (!targetId) {
+          const brands = await getPublicBrands();
+          targetId = brands?.[0]?.id;
+        }
+
+        if (!targetId) {
+          if (!isMounted) return;
+          setBrandData(null);
+          return;
+        }
+
+        const data = await getPublicBrandDetails(targetId);
+        if (!isMounted) return;
+        setBrandData(data);
+      } catch (err) {
+        if (!isMounted) return;
+        setBrandError(err.message || 'Unable to load brand details.');
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    };
+
+    loadBrand();
+    return () => {
+      isMounted = false;
+    };
+  }, [id]);
+
+  useEffect(() => {
     setQuery('');
     setActiveCategory('All');
-  }, [brandId]);
+  }, [brandData?.id]);
 
-  const brandProducts = useMemo(
-    () => productCatalog.filter((product) => product.brandId === brandId),
-    [brandId]
-  );
+  const brandProducts = useMemo(() => brandData?.products || [], [brandData]);
 
   const categories = useMemo(() => {
-    const unique = new Set(brandProducts.map((product) => product.category));
+    const unique = new Set(brandProducts.map((product) => product.category).filter(Boolean));
     return ['All', ...unique];
   }, [brandProducts]);
 
@@ -43,20 +67,41 @@ const BrandDetails = () => {
       const matchesCategory = activeCategory === 'All' || product.category === activeCategory;
       if (!matchesCategory) return false;
       if (!normalizedQuery) return true;
-      const haystack = `${product.name} ${product.variant}`.toLowerCase();
+      const haystack = `${product.name} ${product.variant || ''}`.toLowerCase();
       return haystack.includes(normalizedQuery);
     });
   }, [activeCategory, brandProducts, query]);
 
-  const displayBrand = brandMatch
-    ? brand
-    : id
-      ? {
-        ...brandCatalog[0],
-        id,
-        name: titleFromSlug(id),
-      }
-      : brandCatalog[0];
+  if (isLoading) {
+    return (
+      <div className="bg-primary/10 dark:bg-zinc-950 min-h-full pb-24 transition-colors duration-300">
+        <div className="px-4 mt-4 text-xs text-gray-500">Loading brand details...</div>
+      </div>
+    );
+  }
+
+  if (brandError) {
+    return (
+      <div className="bg-primary/10 dark:bg-zinc-950 min-h-full pb-24 transition-colors duration-300">
+        <div className="px-4 mt-4 text-xs text-rose-500">{brandError}</div>
+      </div>
+    );
+  }
+
+  if (!brandData) {
+    return (
+      <div className="bg-primary/10 dark:bg-zinc-950 min-h-full pb-24 transition-colors duration-300">
+        <div className="px-4 mt-4 text-xs text-gray-500">No brand information available.</div>
+      </div>
+    );
+  }
+
+  const displayBrand = {
+    ...brandData,
+    logo: brandData.logo || brandData.logoUrl,
+    banner: brandData.banner || brandData.logoUrl || brandData.logo,
+    tags: Array.isArray(brandData.tags) ? brandData.tags : []
+  };
 
   return (
     <div className="bg-primary/10 dark:bg-zinc-950 min-h-full pb-24 transition-colors duration-300">
@@ -86,36 +131,44 @@ const BrandDetails = () => {
             </div>
 
             <div className="flex flex-wrap gap-3 text-[11px] text-primary-strong">
-              <a
-                href={`mailto:${displayBrand.email}`}
-                className="inline-flex items-center gap-1 hover:text-primary-strong"
-              >
-                <Mail size={12} />
-                {displayBrand.email}
-              </a>
-              <a
-                href={displayBrand.website}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1 hover:text-primary-strong"
-              >
-                <Globe size={12} />
-                Brand Website
-              </a>
-            </div>
-
-            <p className="text-xs text-gray-600 dark:text-gray-400 leading-relaxed">{displayBrand.about}</p>
-
-            <div className="flex flex-wrap gap-2">
-              {displayBrand.tags.map((tag) => (
-                <span
-                  key={tag}
-                  className="text-[10px] font-semibold text-primary-strong dark:text-primary bg-primary/10 dark:bg-primary-strong/30 px-2 py-1 rounded-full border border-primary/20 dark:border-primary-strong/30"
+              {displayBrand.email && (
+                <a
+                  href={`mailto:${displayBrand.email}`}
+                  className="inline-flex items-center gap-1 hover:text-primary-strong"
                 >
-                  {tag}
-                </span>
-              ))}
+                  <Mail size={12} />
+                  {displayBrand.email}
+                </a>
+              )}
+              {displayBrand.website && (
+                <a
+                  href={displayBrand.website}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 hover:text-primary-strong"
+                >
+                  <Globe size={12} />
+                  Brand Website
+                </a>
+              )}
             </div>
+
+            {displayBrand.about && (
+              <p className="text-xs text-gray-600 dark:text-gray-400 leading-relaxed">{displayBrand.about}</p>
+            )}
+
+            {displayBrand.tags.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {displayBrand.tags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="text-[10px] font-semibold text-primary-strong dark:text-primary bg-primary/10 dark:bg-primary-strong/30 px-2 py-1 rounded-full border border-primary/20 dark:border-primary-strong/30"
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -176,7 +229,7 @@ const BrandDetails = () => {
                   <div className="text-sm font-semibold text-gray-800 dark:text-gray-200">{product.name}</div>
                   <div className="text-[11px] text-gray-500 dark:text-gray-400">{product.variant}</div>
                   <div className="text-[11px] text-green-600 dark:text-green-500 font-semibold mt-1">
-                    {product.reward} cashback
+                    {product.reward}
                   </div>
                 </div>
                 <ChevronRight size={18} className="text-gray-400" />

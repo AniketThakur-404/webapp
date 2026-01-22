@@ -1,18 +1,68 @@
-import React, { useState } from 'react';
-import { Search } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Coffee, Gift, Search, ShoppingBag, Smartphone, Truck, Watch } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { giftCardCategories, giftCards } from '../data/giftcards';
-import { storeCategories, products as redeemedProducts } from '../data/store';
 import FallbackImage from '../components/FallbackImage';
 import HowItWorks from '../components/HowItWorks';
+import { getPublicGiftCardCategories, getPublicGiftCards, getPublicStoreData } from '../lib/api';
+
+const categoryIconMap = {
+    shopping: ShoppingBag,
+    grocery: Coffee,
+    travel: Truck,
+    electronics: Smartphone,
+    accessories: Watch,
+    others: Gift
+};
 
 const GiftCards = () => {
     const [activeCategory, setActiveCategory] = useState('All');
     const [activeTab, setActiveTab] = useState('vouchers');
+    const [giftCardCategories, setGiftCardCategories] = useState([]);
+    const [giftCards, setGiftCards] = useState([]);
+    const [storeData, setStoreData] = useState({ categories: [], products: [] });
+    const [isLoading, setIsLoading] = useState(false);
+    const [loadError, setLoadError] = useState('');
 
-    const filteredProducts = activeCategory === 'All'
-        ? redeemedProducts
-        : redeemedProducts.filter(item => item.category === activeCategory);
+    useEffect(() => {
+        let isMounted = true;
+
+        const loadData = async () => {
+            setIsLoading(true);
+            setLoadError('');
+            try {
+                const [categoriesData, cardsData, storeDataResponse] = await Promise.all([
+                    getPublicGiftCardCategories(),
+                    getPublicGiftCards(),
+                    getPublicStoreData()
+                ]);
+
+                if (!isMounted) return;
+                setGiftCardCategories(Array.isArray(categoriesData) ? categoriesData : []);
+                setGiftCards(Array.isArray(cardsData) ? cardsData : []);
+                setStoreData({
+                    categories: storeDataResponse?.categories || [],
+                    products: storeDataResponse?.products || []
+                });
+            } catch (err) {
+                if (!isMounted) return;
+                setLoadError(err.message || 'Unable to load gift cards.');
+            } finally {
+                if (isMounted) setIsLoading(false);
+            }
+        };
+
+        loadData();
+        return () => {
+            isMounted = false;
+        };
+    }, []);
+
+    const storeCategories = storeData.categories || [];
+    const storeProducts = storeData.products || [];
+
+    const filteredProducts = useMemo(() => activeCategory === 'All'
+        ? storeProducts
+        : storeProducts.filter(item => item.category === activeCategory), [activeCategory, storeProducts]);
 
     return (
         <div className="bg-primary/10 dark:bg-zinc-950 min-h-full pb-10 transition-colors duration-300">
@@ -30,6 +80,10 @@ const GiftCards = () => {
                     </div>
                 </div>
             </div>
+
+            {loadError && (
+                <div className="px-4 pt-2 text-xs text-rose-500">{loadError}</div>
+            )}
 
             {/* Tabs */}
             {/* Tabs - Segmented Control */}
@@ -61,17 +115,23 @@ const GiftCards = () => {
                     {/* Categories Grid */}
                     <div className="px-4 py-2">
                         <h3 className="text-xs font-bold text-gray-500 mb-3 uppercase tracking-wide">Categories</h3>
+                        {isLoading && (
+                            <div className="text-xs text-gray-500">Loading categories...</div>
+                        )}
+                        {!isLoading && giftCardCategories.length === 0 && (
+                            <div className="text-xs text-gray-500">No categories available yet.</div>
+                        )}
                         <div className="grid grid-cols-4 gap-4 mb-6">
-                            {giftCardCategories.map((cat, idx) => {
-                                const Icon = cat.icon;
+                            {giftCardCategories.map((cat) => {
+                                const Icon = categoryIconMap[cat.iconId || cat.id] || Gift;
                                 return (
                                     <Link
-                                        key={idx}
+                                        key={cat.id}
                                         to={`/gift-cards-list/${cat.id}`}
                                         className="flex flex-col items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity"
                                     >
-                                        <div className={`w-12 h-12 ${cat.bg} rounded-2xl flex items-center justify-center shadow-sm`}>
-                                            <Icon size={20} className={cat.iconColor} />
+                                        <div className={`w-12 h-12 ${cat.bg || 'bg-gray-100'} rounded-2xl flex items-center justify-center shadow-sm`}>
+                                            <Icon size={20} className={cat.iconColor || 'text-gray-600'} />
                                         </div>
                                         <span className="text-[10px] font-medium text-gray-700 dark:text-gray-300 text-center leading-tight">{cat.name}</span>
                                     </Link>
@@ -151,6 +211,9 @@ const GiftCards = () => {
                                 </button>
                             </div>
                         ))}
+                        {!isLoading && !filteredProducts.length && (
+                            <div className="text-xs text-gray-500">No products available yet.</div>
+                        )}
                     </div>
                 </div>
             )}

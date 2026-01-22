@@ -2,7 +2,12 @@ import React, { useState } from 'react';
 import {
     LayoutGrid,
     ArrowLeftRight,
-    Gift,
+    BarChart3,
+    Megaphone,
+    Package,
+    HandCoins,
+    Users,
+    QrCode,
     Settings,
     ChevronDown,
     ChevronRight,
@@ -22,20 +27,27 @@ const AdminSidebar = ({
     activeNav,
     onNavClick,
     adminInfo,
-    onLogout
+    onLogout,
+    orderNotificationCount = 0
 }) => {
     const [settingsOpen, setSettingsOpen] = useState(false);
-    const [openMenus, setOpenMenus] = useState({ vendors: true });
+    const [openMenus, setOpenMenus] = useState({ vendors: false });
     const { effectiveTheme } = useTheme();
     const logoSrc =
         effectiveTheme === "dark"
             ? "/dark theme incentify logo.png"
             : "/light theme incentify logo.png";
 
+    const orderBadgeCount = Number(orderNotificationCount) || 0;
+    const formatBadge = (count) => (count > 99 ? "99+" : String(count));
+
     const navItems = [
         { id: 'overview', label: 'Dashboard', icon: LayoutGrid },
-        { id: 'transactions', label: 'Transactions', icon: ArrowLeftRight },
-        { id: 'operations', label: 'Services', icon: Gift },
+        { id: 'analytics', label: 'Analytics', icon: BarChart3 },
+        { id: 'operations', label: 'Operations', icon: Wallet },
+        { id: 'orders', label: 'Orders', icon: Package, badge: orderBadgeCount },
+        { id: 'payouts', label: 'Payouts', icon: HandCoins },
+        { id: 'users', label: 'Users', icon: Users },
         {
             id: 'vendors',
             label: 'Vendors',
@@ -47,7 +59,8 @@ const AdminSidebar = ({
                 { id: 'subscriptions', label: 'Subscriptions', icon: Wallet },
             ]
         },
-        { id: 'payouts', label: 'Promotions', icon: Gift },
+        { id: 'transactions', label: 'Transactions', icon: ArrowLeftRight },
+        { id: 'qrs', label: 'QR Registry', icon: QrCode },
     ];
 
     const settingsItems = [
@@ -116,27 +129,66 @@ const AdminSidebar = ({
                     {navItems.map((item) => {
                         const Icon = item.icon;
                         const hasSubItems = Array.isArray(item.subItems);
+                        const badgeCount = Number(item.badge) || 0;
                         if (hasSubItems) {
-                            const isOpen = openMenus[item.id];
+                            const activeKey = String(activeNav || "");
+                            const isSubActive =
+                                item.subItems.some((sub) => sub.id === activeNav) ||
+                                activeKey.startsWith(`${item.id}-`);
+                            const isActive = activeNav === item.id || isSubActive;
+                            const isOpen = openMenus[item.id] || isSubActive;
+                            const showStarBorder = isActive;
+                            const toggleMenu = () =>
+                                setOpenMenus((prev) => ({ ...prev, [item.id]: !prev[item.id] }));
+                            const menuContent = (
+                                <div className={`flex items-center gap-3 ${collapsed ? 'justify-center w-full' : ''}`}>
+                                    <Icon size={20} className={`flex-shrink-0 ${showStarBorder ? 'text-[#81cc2a]' : ''}`} />
+                                    {!collapsed && (
+                                        <>
+                                            <span className={`text-sm font-medium ${showStarBorder ? 'text-white' : ''}`}>
+                                                {item.label}
+                                            </span>
+                                            {isOpen ? (
+                                                <ChevronDown size={16} className="ml-auto" />
+                                            ) : (
+                                                <ChevronRight size={16} className="ml-auto" />
+                                            )}
+                                        </>
+                                    )}
+                                </div>
+                            );
                             return (
                                 <div key={item.id} className="space-y-1">
-                                    <button
-                                        onClick={() => setOpenMenus((prev) => ({ ...prev, [item.id]: !prev[item.id] }))}
-                                        className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all text-slate-600 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/5 ${collapsed ? 'justify-center' : ''}`}
-                                        title={collapsed ? item.label : undefined}
-                                    >
-                                        <Icon size={20} className="flex-shrink-0" />
-                                        {!collapsed && (
-                                            <>
-                                                <span className="text-sm font-medium">{item.label}</span>
-                                                {isOpen ? (
-                                                    <ChevronDown size={16} className="ml-auto" />
-                                                ) : (
-                                                    <ChevronRight size={16} className="ml-auto" />
-                                                )}
-                                            </>
-                                        )}
-                                    </button>
+                                    {showStarBorder ? (
+                                        <StarBorder
+                                            as="button"
+                                            onClick={toggleMenu}
+                                            color="#81cc2a"
+                                            speed="4s"
+                                            className={`w-full cursor-pointer ${collapsed ? 'justify-center mx-auto' : ''}`}
+                                            title={collapsed ? item.label : undefined}
+                                        >
+                                            {menuContent}
+                                        </StarBorder>
+                                    ) : (
+                                        <button
+                                            onClick={toggleMenu}
+                                            className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all text-slate-600 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/5 ${collapsed ? 'justify-center' : ''}`}
+                                            title={collapsed ? item.label : undefined}
+                                        >
+                                            <Icon size={20} className="flex-shrink-0" />
+                                            {!collapsed && (
+                                                <>
+                                                    <span className="text-sm font-medium">{item.label}</span>
+                                                    {isOpen ? (
+                                                        <ChevronDown size={16} className="ml-auto" />
+                                                    ) : (
+                                                        <ChevronRight size={16} className="ml-auto" />
+                                                    )}
+                                                </>
+                                            )}
+                                        </button>
+                                    )}
                                     {!collapsed && isOpen && (
                                         <div className="ml-6 space-y-1">
                                             {item.subItems.map((sub) => {
@@ -169,8 +221,18 @@ const AdminSidebar = ({
                                     className={`w-full cursor-pointer ${collapsed ? 'justify-center mx-auto' : ''}`}
                                 >
                                     <div className={`flex items-center gap-3 ${collapsed ? 'justify-center w-full' : 'px-1'}`}>
-                                        <Icon size={20} className="flex-shrink-0 text-[#81cc2a]" />
+                                        <div className="relative">
+                                            <Icon size={20} className="flex-shrink-0 text-[#81cc2a]" />
+                                            {collapsed && badgeCount > 0 && (
+                                                <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-rose-500" />
+                                            )}
+                                        </div>
                                         {!collapsed && <span className="text-sm font-medium text-white">{item.label}</span>}
+                                        {!collapsed && badgeCount > 0 && (
+                                            <span className="ml-auto rounded-full bg-rose-500 text-white text-[10px] font-bold px-2 py-0.5">
+                                                {formatBadge(badgeCount)}
+                                            </span>
+                                        )}
                                     </div>
                                 </StarBorder>
                             );
@@ -182,8 +244,18 @@ const AdminSidebar = ({
                                 className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all text-slate-600 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/5 dark:hover:text-white ${collapsed ? 'justify-center' : ''}`}
                                 title={collapsed ? item.label : ''}
                             >
-                                <Icon size={20} className="flex-shrink-0" />
+                                <div className="relative">
+                                    <Icon size={20} className="flex-shrink-0" />
+                                    {collapsed && badgeCount > 0 && (
+                                        <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-rose-500" />
+                                    )}
+                                </div>
                                 {!collapsed && <span className="text-sm font-medium">{item.label}</span>}
+                                {!collapsed && badgeCount > 0 && (
+                                    <span className="ml-auto rounded-full bg-rose-500 text-white text-[10px] font-bold px-2 py-0.5">
+                                        {formatBadge(badgeCount)}
+                                    </span>
+                                )}
                             </button>
                         );
                     })}

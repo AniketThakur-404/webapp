@@ -1,28 +1,91 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Calendar, Package, Percent, ShoppingBag } from 'lucide-react';
-import { giftCards } from '../data/giftcards';
 import FallbackImage from '../components/FallbackImage';
 import HowItWorks from '../components/HowItWorks';
+import { getPublicGiftCardDetails, getPublicGiftCards } from '../lib/api';
 
 const GiftCardInfo = () => {
   const { id } = useParams();
-  const giftCard = giftCards.find((card) => card.id === id) || giftCards[0];
-
+  const [giftCard, setGiftCard] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadError, setLoadError] = useState('');
   const [amount, setAmount] = useState('');
 
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadGiftCard = async () => {
+      setIsLoading(true);
+      setLoadError('');
+      try {
+        let targetId = id;
+        if (!targetId) {
+          const cards = await getPublicGiftCards();
+          targetId = cards?.[0]?.id;
+        }
+
+        if (!targetId) {
+          if (!isMounted) return;
+          setGiftCard(null);
+          return;
+        }
+
+        const data = await getPublicGiftCardDetails(targetId);
+        if (!isMounted) return;
+        setGiftCard(data);
+      } catch (err) {
+        if (!isMounted) return;
+        setLoadError(err.message || 'Unable to load gift card details.');
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    };
+
+    loadGiftCard();
+    return () => {
+      isMounted = false;
+    };
+  }, [id]);
+
+  if (isLoading) {
+    return (
+      <div className="bg-primary/10 dark:bg-zinc-950 min-h-full pb-24 transition-colors duration-300">
+        <div className="px-4 mt-4 text-xs text-gray-500">Loading gift card...</div>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="bg-primary/10 dark:bg-zinc-950 min-h-full pb-24 transition-colors duration-300">
+        <div className="px-4 mt-4 text-xs text-rose-500">{loadError}</div>
+      </div>
+    );
+  }
+
+  if (!giftCard) {
+    return (
+      <div className="bg-primary/10 dark:bg-zinc-950 min-h-full pb-24 transition-colors duration-300">
+        <div className="px-4 mt-4 text-xs text-gray-500">No gift card details available.</div>
+      </div>
+    );
+  }
+
   const amountOptions = useMemo(() => giftCard.amountOptions || [], [giftCard.amountOptions]);
-  const minText = giftCard.minAmount.toLocaleString('en-IN');
-  const maxText = giftCard.maxAmount.toLocaleString('en-IN');
+  const minAmount = Number(giftCard.minAmount || 0);
+  const maxAmount = Number(giftCard.maxAmount || 0);
+  const minText = minAmount ? minAmount.toLocaleString('en-IN') : '-';
+  const maxText = maxAmount ? maxAmount.toLocaleString('en-IN') : '-';
 
   const features = [
     {
-      label: giftCard.delivery,
+      label: giftCard.delivery || 'Instant Delivery',
       icon: <Package size={16} className="text-rose-600" />,
       bg: 'bg-rose-50',
     },
     {
-      label: `Valid for ${giftCard.validityDays} day`,
+      label: giftCard.validityDays ? `Valid for ${giftCard.validityDays} day` : 'Validity varies',
       icon: <Calendar size={16} className="text-teal-600" />,
       bg: 'bg-teal-50',
     },
@@ -109,7 +172,7 @@ const GiftCardInfo = () => {
             Terms and Conditions
           </summary>
           <div className="px-4 pb-4 text-xs text-gray-600 dark:text-gray-400 leading-relaxed space-y-2">
-            {giftCard.terms.map((term) => (
+            {(giftCard.terms || []).map((term) => (
               <div key={term}>{term}</div>
             ))}
           </div>

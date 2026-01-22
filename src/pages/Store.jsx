@@ -1,11 +1,6 @@
-import React, { useMemo, useState } from "react";
-import { BadgeDollarSign, Gift, ShoppingBag, Tag } from "lucide-react";
-import {
-  storeTabs,
-  storeCategories,
-  vouchers,
-  products,
-} from "../data/store";
+import React, { useEffect, useMemo, useState } from "react";
+import { BadgeDollarSign, Gift, ShoppingBag } from "lucide-react";
+import { getPublicStoreData } from "../lib/api";
 
 const StoreCard = ({ title, subtitle, value, badge }) => (
   <div className="rounded-2xl border border-slate-50 dark:border-white/10 bg-white dark:bg-[#0f0f11] shadow-2xl shadow-slate-900/20 p-4 flex flex-col gap-4">
@@ -28,16 +23,68 @@ const StoreCard = ({ title, subtitle, value, badge }) => (
 );
 
 const Store = () => {
-  const [activeTab, setActiveTab] = useState(storeTabs[0].id);
-  const [activeCategory, setActiveCategory] = useState(storeCategories[0]);
+  const [storeData, setStoreData] = useState({
+    tabs: [],
+    categories: [],
+    vouchers: [],
+    products: []
+  });
+  const [activeTab, setActiveTab] = useState("vouchers");
+  const [activeCategory, setActiveCategory] = useState("Popular");
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadError, setLoadError] = useState("");
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadStoreData = async () => {
+      setIsLoading(true);
+      setLoadError("");
+      try {
+        const data = await getPublicStoreData();
+        if (!isMounted) return;
+        setStoreData({
+          tabs: data?.tabs || [],
+          categories: data?.categories || [],
+          vouchers: data?.vouchers || [],
+          products: data?.products || []
+        });
+      } catch (err) {
+        if (!isMounted) return;
+        setLoadError(err.message || "Unable to load store data.");
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    };
+
+    loadStoreData();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!storeData.tabs.length) return;
+    const isValid = storeData.tabs.some((tab) => tab.id === activeTab);
+    if (!isValid) {
+      setActiveTab(storeData.tabs[0].id);
+    }
+  }, [activeTab, storeData.tabs]);
+
+  useEffect(() => {
+    if (!storeData.categories.length) return;
+    if (!storeData.categories.includes(activeCategory)) {
+      setActiveCategory(storeData.categories[0]);
+    }
+  }, [activeCategory, storeData.categories]);
 
   const activeItems = useMemo(() => {
-    const list = activeTab === "products" ? products : vouchers;
+    const list = activeTab === "products" ? storeData.products : storeData.vouchers;
     if (activeCategory === "Popular") {
       return list;
     }
     return list.filter((item) => item.category === activeCategory);
-  }, [activeTab, activeCategory]);
+  }, [activeCategory, activeTab, storeData.products, storeData.vouchers]);
 
   return (
     <div className="px-6 py-6">
@@ -56,8 +103,12 @@ const Store = () => {
         </button>
       </div>
 
+      {loadError && (
+        <div className="mb-4 text-xs text-rose-500">{loadError}</div>
+      )}
+
       <div className="rounded-full border border-slate-200/60 bg-white/60 dark:border-white/10 dark:bg-white/5 p-1 flex gap-2">
-        {storeTabs.map((tab) => (
+        {(storeData.tabs.length ? storeData.tabs : [{ id: "vouchers", label: "Vouchers" }, { id: "products", label: "Products" }]).map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
@@ -73,7 +124,7 @@ const Store = () => {
       </div>
 
       <div className="mt-4 flex flex-wrap gap-2">
-        {storeCategories.map((category) => (
+        {storeData.categories.map((category) => (
           <button
             key={category}
             onClick={() => setActiveCategory(category)}
@@ -87,6 +138,10 @@ const Store = () => {
           </button>
         ))}
       </div>
+
+      {isLoading && (
+        <div className="mt-6 text-xs text-slate-500">Loading store items...</div>
+      )}
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2">
         {activeItems.map((item) => (

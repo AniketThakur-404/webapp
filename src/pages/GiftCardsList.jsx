@@ -1,13 +1,40 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ChevronRight, Percent, Search } from 'lucide-react';
-import { giftCards } from '../data/giftcards';
 import FallbackImage from '../components/FallbackImage';
 import HowItWorks from '../components/HowItWorks';
+import { getPublicGiftCards } from '../lib/api';
 
 const GiftCardsList = () => {
   const { categoryId } = useParams();
   const [query, setQuery] = useState('');
+  const [giftCards, setGiftCards] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadError, setLoadError] = useState('');
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadGiftCards = async () => {
+      setIsLoading(true);
+      setLoadError('');
+      try {
+        const data = await getPublicGiftCards();
+        if (!isMounted) return;
+        setGiftCards(Array.isArray(data) ? data : []);
+      } catch (err) {
+        if (!isMounted) return;
+        setLoadError(err.message || 'Unable to load gift cards.');
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    };
+
+    loadGiftCards();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const filteredCards = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -16,7 +43,7 @@ const GiftCardsList = () => {
       if (!normalizedQuery) return true;
       return card.name.toLowerCase().includes(normalizedQuery);
     });
-  }, [categoryId, query]);
+  }, [categoryId, giftCards, query]);
 
   return (
     <div className="bg-primary/10 dark:bg-zinc-950 min-h-full pb-24 transition-colors duration-300">
@@ -40,6 +67,13 @@ const GiftCardsList = () => {
             <Search size={14} />
           </button>
         </div>
+
+        {loadError && (
+          <div className="text-xs text-rose-500">{loadError}</div>
+        )}
+        {isLoading && (
+          <div className="text-xs text-gray-500">Loading gift cards...</div>
+        )}
 
         <div className="space-y-3">
           {filteredCards.length === 0 ? (

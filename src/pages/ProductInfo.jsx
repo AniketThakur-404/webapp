@@ -1,20 +1,91 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { BadgeCheck, ChevronRight, Scan, Gift } from 'lucide-react';
-import { brandCatalog, productCatalog } from '../data/catalog';
 import FallbackImage from '../components/FallbackImage';
+import { getPublicProductDetails, getPublicProducts } from '../lib/api';
 
 const ProductInfo = () => {
   const { id } = useParams();
-  const product = productCatalog.find((item) => item.id === id) || productCatalog[0];
-  const brand = brandCatalog.find((item) => item.id === product.brandId);
+  const [product, setProduct] = useState(null);
+  const [productError, setProductError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
-  const details = [
-    { label: 'Scheme', value: product.scheme },
-    { label: 'Cashback', value: product.cashback || product.reward },
-    { label: 'Pack Size', value: product.packSize },
-    { label: 'Warranty', value: product.warranty },
-  ];
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadProduct = async () => {
+      setIsLoading(true);
+      setProductError('');
+      try {
+        let targetId = id;
+        if (!targetId) {
+          const products = await getPublicProducts();
+          targetId = products?.[0]?.id;
+        }
+
+        if (!targetId) {
+          if (!isMounted) return;
+          setProduct(null);
+          return;
+        }
+
+        const data = await getPublicProductDetails(targetId);
+        if (!isMounted) return;
+        setProduct(data);
+      } catch (err) {
+        if (!isMounted) return;
+        setProductError(err.message || 'Unable to load product details.');
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    };
+
+    loadProduct();
+    return () => {
+      isMounted = false;
+    };
+  }, [id]);
+
+  if (isLoading) {
+    return (
+      <div className="bg-primary/10 dark:bg-zinc-950 min-h-full pb-24 transition-colors duration-300">
+        <div className="px-4 mt-4 text-xs text-gray-500">Loading product details...</div>
+      </div>
+    );
+  }
+
+  if (productError) {
+    return (
+      <div className="bg-primary/10 dark:bg-zinc-950 min-h-full pb-24 transition-colors duration-300">
+        <div className="px-4 mt-4 text-xs text-rose-500">{productError}</div>
+      </div>
+    );
+  }
+
+  if (!product) {
+    return (
+      <div className="bg-primary/10 dark:bg-zinc-950 min-h-full pb-24 transition-colors duration-300">
+        <div className="px-4 mt-4 text-xs text-gray-500">No product information available.</div>
+      </div>
+    );
+  }
+
+  const displayProduct = {
+    ...product,
+    image: product.imageUrl || product.image,
+    banner: product.bannerUrl || product.banner || product.imageUrl,
+    reward: product.reward || product.cashback || 'Check App',
+    scheme: product.scheme || 'Standard Offer'
+  };
+
+  const brand = product.Brand;
+
+  const details = useMemo(() => [
+    { label: 'Scheme', value: displayProduct.scheme },
+    { label: 'Cashback', value: displayProduct.reward },
+    { label: 'Pack Size', value: displayProduct.packSize || '-' },
+    { label: 'Warranty', value: displayProduct.warranty || '-' },
+  ], [displayProduct.packSize, displayProduct.reward, displayProduct.scheme, displayProduct.warranty]);
 
   const steps = [
     {
@@ -39,8 +110,8 @@ const ProductInfo = () => {
       <div className="px-4 mt-4 space-y-4">
         <div className="relative rounded-2xl overflow-hidden bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 shadow-sm transition-colors duration-300">
           <FallbackImage
-            src={product.banner || product.image}
-            alt={`${product.name} banner`}
+            src={displayProduct.banner || displayProduct.image}
+            alt={`${displayProduct.name} banner`}
             className="w-full h-44 object-cover"
           />
           <button
@@ -53,8 +124,8 @@ const ProductInfo = () => {
 
         <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-100 dark:border-zinc-800 p-4 shadow-sm space-y-3 transition-colors duration-300">
           <div>
-            <h1 className="text-lg font-bold text-gray-900 dark:text-gray-100">{product.name}</h1>
-            <p className="text-xs text-gray-500 dark:text-gray-400">{product.variant}</p>
+            <h1 className="text-lg font-bold text-gray-900 dark:text-gray-100">{displayProduct.name}</h1>
+            <p className="text-xs text-gray-500 dark:text-gray-400">{displayProduct.variant}</p>
           </div>
           {brand && (
             <Link
@@ -65,7 +136,7 @@ const ProductInfo = () => {
               <ChevronRight size={12} />
             </Link>
           )}
-          <p className="text-xs text-gray-600 dark:text-gray-400 leading-relaxed">{product.description}</p>
+          <p className="text-xs text-gray-600 dark:text-gray-400 leading-relaxed">{displayProduct.description}</p>
 
           <div className="grid grid-cols-2 gap-3">
             {details.map((detail) => (

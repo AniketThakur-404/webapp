@@ -3,7 +3,6 @@ import { ChevronLeft, Gift, Home, ShoppingBag, Wallet } from 'lucide-react';
 import { ModeToggle } from './ModeToggle';
 import { LiquidButton } from './ui/LiquidGlassButton';
 import { useLocation, useMatch, useNavigate } from 'react-router-dom';
-import { giftCardCategories, giftCards } from '../data/giftcards';
 import LiquidDock from './LiquidDock';
 import { useTheme } from './ThemeProvider';
 import UserProfileMenu from './UserProfileMenu';
@@ -18,16 +17,8 @@ const Layout = ({ children }) => {
 
     const headerTitle = (() => {
         if (isHome) return '';
-        if (giftCardInfoMatch?.params?.id) {
-            const card = giftCards.find((item) => item.id === giftCardInfoMatch.params.id);
-            return card?.name || 'Gift Card Info';
-        }
-        if (giftCardsListMatch?.params?.categoryId) {
-            const category = giftCardCategories.find(
-                (item) => item.id === giftCardsListMatch.params.categoryId
-            );
-            return category?.name || 'Gift Cards';
-        }
+        if (giftCardInfoMatch?.params?.id) return 'Gift Card Info';
+        if (giftCardsListMatch?.params?.categoryId) return 'Gift Cards';
         if (location.pathname.startsWith('/gift-cards-list')) return 'Gift Cards';
         if (location.pathname.startsWith('/gift-card-info')) return 'Gift Card Info';
         if (location.pathname.startsWith('/gift-cards')) return 'Store';
