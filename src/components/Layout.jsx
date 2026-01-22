@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { ChevronLeft, Gift, Home, Store, Wallet } from 'lucide-react';
+import { ChevronLeft, Gift, Home, ShoppingBag, Wallet } from 'lucide-react';
 import { ModeToggle } from './ModeToggle';
 import { LiquidButton } from './ui/LiquidGlassButton';
 import { useLocation, useMatch, useNavigate } from 'react-router-dom';
@@ -30,8 +30,9 @@ const Layout = ({ children }) => {
         }
         if (location.pathname.startsWith('/gift-cards-list')) return 'Gift Cards';
         if (location.pathname.startsWith('/gift-card-info')) return 'Gift Card Info';
-        if (location.pathname.startsWith('/gift-cards')) return 'Gift Card';
+        if (location.pathname.startsWith('/gift-cards')) return 'Store';
         if (location.pathname.startsWith('/wallet')) return 'vCash';
+        if (location.pathname.startsWith('/store')) return 'Rewards Store';
         if (location.pathname.startsWith('/vendor-dashboard')) return 'Vendor Dashboard';
         if (location.pathname.startsWith('/admin')) return 'Admin Console';
         if (location.pathname.startsWith('/brand-details')) return 'Brand Details';
@@ -64,7 +65,7 @@ const Layout = ({ children }) => {
                     {isHome ? (
                         <>
                             <div className="flex items-center gap-2">
-                                <div className="h-16 w-40 overflow-hidden flex items-center">
+                                <div className="h-12 w-40 overflow-hidden flex items-center">
                                     <img
                                         src={logoSrc}
                                         alt="Incentify Online"
@@ -84,7 +85,7 @@ const Layout = ({ children }) => {
                             </div>
                         </>
                     ) : (
-                        <div className="flex items-center justify-between w-full">
+                        <div className="flex items-center justify-between w-full h-12">
                             <div className="flex items-center gap-3">
                                 <LiquidButton
                                     type="button"
@@ -118,9 +119,8 @@ const Layout = ({ children }) => {
                 <LiquidDock
                     items={[
                         { path: '/', icon: <Home size={20} />, label: 'Home' },
-                        { path: '/gift-cards', icon: <Gift size={20} />, label: 'Gift Card' },
+                        { path: '/gift-cards', icon: <Gift size={20} />, label: 'Store' },
                         { path: '/wallet', icon: <Wallet size={20} />, label: 'vCash' },
-                        { path: '/vendor-dashboard', icon: <Store size={20} />, label: 'Vendor' },
                     ]}
                 />
             </div>

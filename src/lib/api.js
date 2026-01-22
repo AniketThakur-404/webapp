@@ -23,10 +23,10 @@ export const scanQr = (token, hash) =>
     token,
   });
 
-export const loginWithEmail = (email, password) =>
+export const loginWithEmail = (email, password, username) =>
   apiRequest("/api/auth/login", {
     method: "POST",
-    body: { email, password },
+    body: { email, password, username },
   });
 
 export const getMe = (token) =>
@@ -53,17 +53,29 @@ export const rechargeVendorWallet = (token, amount) =>
     body: { amount },
   });
 
-export const orderVendorQrs = (token, campaignId, quantity) =>
+export const orderVendorQrs = (token, campaignId, quantity, cashbackAmount) =>
   apiRequest("/api/vendor/qrs/order", {
     method: "POST",
     token,
-    body: { campaignId, quantity },
+    body: { campaignId, quantity, cashbackAmount },
   });
 
 export const getVendorQrs = (token) =>
   apiRequest("/api/vendor/qrs", {
     token,
   });
+
+export const deleteVendorQrBatch = (token, campaignId, cashbackAmount) =>
+  apiRequest(
+    `/api/vendor/qrs/batch?campaignId=${encodeURIComponent(campaignId)}&cashbackAmount=${encodeURIComponent(
+      cashbackAmount ?? ""
+    )}`,
+    {
+      method: "DELETE",
+      token,
+      body: { campaignId, cashbackAmount },
+    }
+  );
 
 export const verifyPublicQr = (hash) =>
   apiRequest(`/api/public/qrs/${encodeURIComponent(hash)}`);
@@ -85,6 +97,30 @@ export const getVendorBrand = (token) =>
     token,
   });
 
+export const getVendorBrands = (token) =>
+  apiRequest("/api/vendor/brands", {
+    token,
+  });
+
+export const getVendorProducts = (token) =>
+  apiRequest("/api/vendor/products", {
+    token,
+  });
+
+export const addVendorProduct = (token, payload) =>
+  apiRequest("/api/vendor/products", {
+    method: "POST",
+    token,
+    body: payload,
+  });
+
+export const importVendorProducts = (token, payload) =>
+  apiRequest("/api/vendor/products/import", {
+    method: "POST",
+    token,
+    body: payload,
+  });
+
 export const upsertVendorBrand = (token, payload) =>
   apiRequest("/api/vendor/brand", {
     method: "POST",
@@ -102,6 +138,19 @@ export const createVendorCampaign = (token, payload) =>
     method: "POST",
     token,
     body: payload,
+  });
+
+export const updateVendorCampaign = (token, campaignId, payload) =>
+  apiRequest(`/api/vendor/campaigns/${campaignId}`, {
+    method: "PUT",
+    token,
+    body: payload,
+  });
+
+export const deleteVendorCampaign = (token, campaignId) =>
+  apiRequest(`/api/vendor/campaigns/${campaignId}`, {
+    method: "DELETE",
+    token,
   });
 
 export const getAdminDashboard = (token) =>
@@ -124,6 +173,13 @@ export const updateAdminUserStatus = (token, userId, status) =>
 export const getAdminVendors = (token) =>
   apiRequest("/api/admin/vendors", {
     token,
+  });
+
+export const createAdminBrand = (token, payload) =>
+  apiRequest("/api/admin/brands", {
+    method: "POST",
+    token,
+    body: payload,
   });
 
 export const updateAdminVendorStatus = (token, vendorId, status) =>
@@ -167,4 +223,54 @@ export const processAdminWithdrawal = (token, withdrawalId, payload) =>
     method: "PUT",
     token,
     body: payload,
+  });
+
+export const getAdminSubscriptions = (token, status) =>
+  apiRequest(`/api/admin/subscriptions${status ? `?status=${status}` : ""}`, {
+    token,
+  });
+
+export const updateAdminVendorSubscription = (token, vendorId, payload) =>
+  apiRequest(`/api/admin/vendors/${vendorId}/subscription`, {
+    method: "PUT",
+    token,
+    body: payload,
+  });
+
+// --- Vendor Order APIs ---
+export const getVendorOrders = (token) =>
+  apiRequest("/api/vendor/orders", {
+    token,
+  });
+
+export const createVendorOrder = (token, campaignId, quantity, cashbackAmount) =>
+  apiRequest("/api/vendor/orders", {
+    method: "POST",
+    token,
+    body: { campaignId, quantity, cashbackAmount },
+  });
+
+export const payVendorOrder = (token, orderId) =>
+  apiRequest(`/api/vendor/orders/${orderId}/pay`, {
+    method: "POST",
+    token,
+  });
+
+// --- Admin Order APIs ---
+export const getAdminOrders = (token) =>
+  apiRequest("/api/admin/orders", {
+    token,
+  });
+
+export const updateAdminOrderStatus = (token, orderId, status) =>
+  apiRequest(`/api/admin/orders/${orderId}/status`, {
+    method: "PUT",
+    token,
+    body: { status },
+  });
+
+export const payVendorCampaign = (token, campaignId) =>
+  apiRequest(`/api/vendor/campaigns/${campaignId}/pay`, {
+    method: "POST",
+    token,
   });

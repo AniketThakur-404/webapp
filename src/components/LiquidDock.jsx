@@ -1,6 +1,7 @@
 import React, { useRef, useState, useLayoutEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { motion, useMotionValue, useSpring, useTransform } from 'framer-motion';
+import './StarBorder.css';
 
 const DockIcon = React.forwardRef(({ children, to, label, isActive, mouseX }, forwardedRef) => {
     const localRef = useRef(null);
@@ -114,12 +115,28 @@ const LiquidDock = ({ items }) => {
                     mouseX.set(Infinity);
                     setHoveredIndex(null);
                 }}
-                className="relative bg-white/75 dark:bg-zinc-900/80 backdrop-blur-2xl rounded-full shadow-2xl border border-white/40 dark:border-white/10 pointer-events-auto"
+                className="relative bg-white/75 dark:bg-zinc-900/80 backdrop-blur-2xl rounded-full shadow-2xl border border-white/40 dark:border-white/10 pointer-events-auto overflow-hidden"
                 style={{
                     boxShadow: '0 8px 32px rgba(0,0,0,0.2), 0 0 0 1px rgba(255,255,255,0.1) inset',
                 }}
             >
-                <div className="relative h-[60px] px-3 py-2">
+                {/* Outer StarBorder Gradients */}
+                <div
+                    className="border-gradient-bottom"
+                    style={{
+                        background: `radial-gradient(circle, #81cc2a, transparent 10%)`,
+                        animationDuration: '4s'
+                    }}
+                ></div>
+                <div
+                    className="border-gradient-top"
+                    style={{
+                        background: `radial-gradient(circle, #81cc2a, transparent 10%)`,
+                        animationDuration: '4s'
+                    }}
+                ></div>
+
+                <div className="relative h-[60px] px-3 py-2 z-10">
                     <div ref={innerContainerRef} className="relative h-full flex items-center gap-8">
                         {/* Morphing liquid background pill */}
                         <motion.div
@@ -132,7 +149,7 @@ const LiquidDock = ({ items }) => {
                                 mass: 1.5,
                             }}
                         >
-                            <div className="absolute inset-0 rounded-full bg-gradient-to-br from-white/70 via-white/25 to-transparent opacity-80 dark:from-white/20 dark:via-white/6 dark:to-transparent" />
+                            <div className="absolute inset-0 rounded-full bg-gradient-to-br from-white/70 via-white/25 to-transparent opacity-80 dark:from-white/20 dark:via-white/6 dark:to-transparent z-10" />
                         </motion.div>
 
                         {/* Icons */}

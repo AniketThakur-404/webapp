@@ -1,17 +1,28 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import { QRCodeCanvas } from "qrcode.react";
+import { format } from "date-fns";
+import { jsPDF } from "jspdf";
 import {
+  Menu,
+  X,
+  LayoutDashboard,
+  Store,
   BadgeCheck,
-  ChevronLeft,
-  ChevronRight,
-  ClipboardCheck,
-  LogOut,
+  Megaphone,
+  Package,
+  Wallet,
   QrCode,
-  RefreshCw,
   ScanLine,
   ShieldCheck,
-  Store,
-  Wallet,
+  LogOut,
+  ChevronRight,
+  Plus,
+  ArrowRight,
+  ClipboardCheck,
+  RefreshCw,
+  Calendar,
+  Trash2,
 } from "lucide-react";
 import {
   getMe,
@@ -20,17 +31,30 @@ import {
   getVendorBrand,
   getVendorCampaigns,
   getVendorProfile,
+  getVendorProducts,
+  addVendorProduct,
   loginWithEmail,
   createVendorCampaign,
+  updateVendorCampaign,
+  deleteVendorCampaign,
+  deleteVendorQrBatch,
   orderVendorQrs,
   rechargeVendorWallet,
   scanQr,
-  upsertVendorBrand,
   updateVendorProfile,
   verifyPublicQr,
+  payVendorCampaign
 } from "../lib/api";
+import VendorAnalytics from "../components/VendorAnalytics";
+import StarBorder from "../components/StarBorder";
+import { ModeToggle } from "../components/ModeToggle";
 
 const VENDOR_TOKEN_KEY = "cashback_vendor_token";
+const subscriptionTypeLabels = {
+  MONTHS_6: "6 Months",
+  MONTHS_12: "12 Months",
+  MONTHS_24: "24 Months",
+};
 
 const formatAmount = (value) => {
   if (value === undefined || value === null) return "0.00";
@@ -39,7 +63,64 @@ const formatAmount = (value) => {
   return String(value);
 };
 
+const formatCompactAmount = (value) => {
+  if (value === undefined || value === null) return "0.00";
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return String(value);
+
+  const abs = Math.abs(numeric);
+  const sign = numeric < 0 ? "-" : "";
+  const units = [
+    { value: 1e12, suffix: "T" },
+    { value: 1e9, suffix: "B" },
+    { value: 1e6, suffix: "M" },
+    { value: 1e3, suffix: "K" },
+  ];
+
+  for (const unit of units) {
+    if (abs >= unit.value) {
+      const compact = abs / unit.value;
+      const decimals = compact >= 100 ? 0 : compact >= 10 ? 1 : 2;
+      let compactText = compact.toFixed(decimals);
+      compactText = compactText.replace(/\.0+$/, "").replace(/(\.\d*[1-9])0+$/, "$1");
+      return `${sign}${compactText}${unit.suffix}`;
+    }
+  }
+
+  return formatAmount(numeric);
+};
+
+const formatShortDate = (value) => {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return format(date, "dd MMM yyyy");
+};
+
+const parseNumericValue = (value, fallback = 0) => {
+  if (value === null || value === undefined || value === "") {
+    return fallback;
+  }
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : fallback;
+};
+
+const getGeneratedPrice = (qr) => {
+  const qrValue = parseNumericValue(qr?.cashbackAmount, 0);
+  if (qrValue > 0) {
+    return qrValue;
+  }
+  return parseNumericValue(qr?.Campaign?.cashbackAmount, 0);
+};
+
 const VendorDashboard = () => {
+  const { section } = useParams();
+  const navigate = useNavigate();
+
+  // Map URL section to internal state identifiers if necessary, or use directly
+  // 'overview', 'brand', 'campaigns', 'products', 'wallet', 'scan'
+  const activeTab = section === 'qr-generation' ? 'campaigns' : section || 'overview';
+
   const [token, setToken] = useState(() => localStorage.getItem(VENDOR_TOKEN_KEY));
   const [vendorInfo, setVendorInfo] = useState(null);
 
@@ -57,15 +138,19 @@ const VendorDashboard = () => {
   const [isRecharging, setIsRecharging] = useState(false);
 
   const [campaignId, setCampaignId] = useState("");
-  const [qrQuantity, setQrQuantity] = useState("25");
   const [qrOrderStatus, setQrOrderStatus] = useState("");
   const [qrOrderError, setQrOrderError] = useState("");
   const [isOrdering, setIsOrdering] = useState(false);
   const [lastOrderHashes, setLastOrderHashes] = useState([]);
+  const [lastBatchSummary, setLastBatchSummary] = useState(null);
+  const [selectedQrCampaign, setSelectedQrCampaign] = useState("");
+  const [selectedQrProduct, setSelectedQrProduct] = useState("");
+  const [qrRows, setQrRows] = useState([{ id: Date.now(), cashbackAmount: "", quantity: 10 }]);
 
   const [qrs, setQrs] = useState([]);
   const [qrError, setQrError] = useState("");
   const [isLoadingQrs, setIsLoadingQrs] = useState(false);
+  const [deletingBatchKey, setDeletingBatchKey] = useState(null);
 
   const [scanHash, setScanHash] = useState("");
   const [scanStatus, setScanStatus] = useState("");
@@ -76,6 +161,9 @@ const VendorDashboard = () => {
   const [activeQr, setActiveQr] = useState(null);
   const [qrActionStatus, setQrActionStatus] = useState("");
   const qrCarouselRef = useRef(null);
+  const lastAutoFilledCashbackRef = useRef(null);
+  const campaignStartDateRef = useRef(null);
+  const campaignEndDateRef = useRef(null);
   const [showAllInventory, setShowAllInventory] = useState(false);
 
   const [companyProfile, setCompanyProfile] = useState({
@@ -84,37 +172,153 @@ const VendorDashboard = () => {
     gstin: "",
     address: "",
   });
+
   const [brandProfile, setBrandProfile] = useState({
     name: "",
     logoUrl: "",
     website: "",
   });
+  const [subscriptionInfo, setSubscriptionInfo] = useState(null);
+  const [subscriptionBlocked, setSubscriptionBlocked] = useState("");
   const [registrationStatus, setRegistrationStatus] = useState("");
   const [registrationError, setRegistrationError] = useState("");
   const [isSavingRegistration, setIsSavingRegistration] = useState(false);
 
   const [campaigns, setCampaigns] = useState([]);
+  const [overviewCampaignId, setOverviewCampaignId] = useState("all");
   const [campaignForm, setCampaignForm] = useState({
     title: "",
     description: "",
     cashbackAmount: "",
+    totalBudget: "",
     startDate: "",
     endDate: "",
-    totalBudget: "",
+    productId: "",
   });
   const [campaignStatus, setCampaignStatus] = useState("");
   const [campaignError, setCampaignError] = useState("");
   const [isSavingCampaign, setIsSavingCampaign] = useState(false);
+  const [deletingCampaignId, setDeletingCampaignId] = useState(null);
+  const [campaignRows, setCampaignRows] = useState([{ id: Date.now(), cashbackAmount: "", quantity: "", totalBudget: "" }]);
+  const [campaignTab, setCampaignTab] = useState('create'); // 'create', 'active', 'pending'
+  const [selectedPendingCampaign, setSelectedPendingCampaign] = useState(null);
+  const [isPayingCampaign, setIsPayingCampaign] = useState(false);
+
+  const handleAddCampaignRow = () => {
+    setCampaignRows((prev) => [...prev, { id: Date.now(), cashbackAmount: "", quantity: "", totalBudget: "" }]);
+  };
+
+  const handleRemoveCampaignRow = (id) => {
+    setCampaignRows((prev) => {
+      const remaining = prev.filter((row) => row.id !== id);
+      return remaining.length ? remaining : [{ id: Date.now(), cashbackAmount: "", quantity: "", totalBudget: "" }];
+    });
+  };
+
+  const handleCampaignRowChange = (id, field, value) => {
+    setCampaignRows((prev) =>
+      prev.map((row) => {
+        if (row.id === id) {
+          const updatedRow = { ...row, [field]: value };
+          if (field === 'cashbackAmount' || field === 'quantity') {
+            const cb = field === 'cashbackAmount' ? parseFloat(value) : parseFloat(row.cashbackAmount);
+            const qty = field === 'quantity' ? parseFloat(value) : parseFloat(row.quantity);
+            if (!isNaN(cb) && !isNaN(qty) && cb > 0 && qty > 0) {
+              updatedRow.totalBudget = (cb * qty).toFixed(2);
+            }
+          }
+          return updatedRow;
+        }
+        return row;
+      })
+    );
+  };
+
+
+  const [products, setProducts] = useState([]);
+  const [productForm, setProductForm] = useState({
+    name: "",
+    variant: "",
+    category: "",
+    description: "",
+    imageUrl: "",
+  });
+  const [productStatus, setProductStatus] = useState("");
+  const [productError, setProductError] = useState("");
+  const [isSavingProduct, setIsSavingProduct] = useState(false);
+  const [isLoadingProducts, setIsLoadingProducts] = useState(false);
+
+  // QR Row Handlers
+  const handleAddQrRow = () => {
+    setQrRows((prev) => [...prev, { id: Date.now(), cashbackAmount: "", quantity: 10 }]);
+  };
+  const handleRemoveQrRow = (id) => {
+    setQrRows((prev) => {
+      const remaining = prev.filter((row) => row.id !== id);
+      return remaining.length ? remaining : [{ id: Date.now(), cashbackAmount: "", quantity: 10 }];
+    });
+  };
+  const handleQrRowChange = (id, field, value) => {
+    setQrRows((prev) => prev.map((row) => (row.id === id ? { ...row, [field]: value } : row)));
+  };
+
+  const selectedCampaign = useMemo(
+    () => campaigns.find((campaign) => campaign.id === selectedQrCampaign),
+    [campaigns, selectedQrCampaign]
+  );
+
+  const campaignPriceHints = useMemo(() => {
+    const map = {};
+    qrs.forEach((qr) => {
+      const campaignId = qr.Campaign?.id || qr.campaignId;
+      if (!campaignId) return;
+      const price = getGeneratedPrice(qr);
+      if (!price) return;
+      const createdAt = new Date(qr.createdAt || 0).getTime();
+      const existing = map[campaignId];
+      if (!existing || createdAt > existing.createdAt) {
+        map[campaignId] = { price, createdAt };
+      }
+    });
+    return map;
+  }, [qrs]);
+
+  const selectedCampaignCashback = parseNumericValue(selectedCampaign?.cashbackAmount, 0);
+  const selectedCampaignBudget = parseNumericValue(selectedCampaign?.totalBudget, 0);
+  const selectedCampaignPriceHint = selectedCampaign
+    ? campaignPriceHints[selectedCampaign.id]?.price || 0
+    : 0;
+  const effectiveCampaignCashback =
+    selectedCampaignCashback > 0 ? selectedCampaignCashback : selectedCampaignPriceHint;
 
   const isAuthenticated = Boolean(token);
+  const subscriptionStatus = String(subscriptionInfo?.status || "INACTIVE").toLowerCase();
+  const subscriptionStatusLabel = subscriptionStatus.toUpperCase();
+  const subscriptionBadgeClass =
+    {
+      active: "bg-emerald-500/10 text-emerald-400",
+      paused: "bg-amber-500/10 text-amber-400",
+      expired: "bg-rose-500/10 text-rose-400",
+      inactive: "bg-rose-500/10 text-rose-400",
+    }[subscriptionStatus] || "bg-slate-500/10 text-slate-300";
+  const subscriptionEndsAt = formatShortDate(subscriptionInfo?.endDate);
+  const subscriptionStartsAt = formatShortDate(subscriptionInfo?.startDate);
+  const subscriptionPlanLabel =
+    subscriptionTypeLabels[subscriptionInfo?.subscriptionType] || "-";
+  const subscriptionHeading =
+    subscriptionStatus === "expired"
+      ? "Subscription expired"
+      : subscriptionStatus === "paused"
+        ? "Subscription paused"
+        : "Subscription inactive";
 
   const getQrValue = (hash) => {
     const envBase = import.meta.env.VITE_QR_BASE_URL;
     if (envBase) {
-      return `${envBase.replace(/\/$/, "")}/api/public/qrs/${hash}`;
+      return `${envBase.replace(/\/$/, "")}/redeem/${hash}`;
     }
     if (typeof window !== "undefined") {
-      return `${window.location.origin}/api/public/qrs/${hash}`;
+      return `${window.location.origin}/redeem/${hash}`;
     }
     return hash;
   };
@@ -135,6 +339,15 @@ const VendorDashboard = () => {
       return "text-primary-strong dark:text-primary";
     }
     return "text-gray-500 dark:text-gray-400";
+  };
+
+  const openDatePicker = (inputRef) => {
+    if (!inputRef?.current) return;
+    if (typeof inputRef.current.showPicker === "function") {
+      inputRef.current.showPicker();
+      return;
+    }
+    inputRef.current.focus();
   };
 
   const copyToClipboard = async (value) => {
@@ -180,6 +393,89 @@ const VendorDashboard = () => {
     link.click();
   };
 
+  const handleDownloadGroupPdf = (group) => {
+    if (!group || !group.qrs || group.qrs.length === 0) return;
+
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const qrSize = 40;
+    const margin = 14;
+    const itemsPerRow = 4;
+    const rowsPerPage = 6;
+    const rowSpacing = qrSize + 28;
+    const spacing = (pageWidth - margin * 2 - qrSize * itemsPerRow) / Math.max(itemsPerRow - 1, 1);
+    const displayPrice = parseNumericValue(group.price, group.qrs[0]?.cashbackAmount ?? 0);
+    const priceLabel = formatAmount(displayPrice);
+    const campaignTitle = group.campaignTitle || "Campaign";
+
+    const drawHeader = () => {
+      doc.setFontSize(16);
+      doc.text(`QR Batch - INR ${priceLabel}`, margin, 18);
+      doc.setFontSize(10);
+      doc.text(`Campaign: ${campaignTitle}`, margin, 26);
+    };
+    drawHeader();
+
+    const itemsPerPage = itemsPerRow * rowsPerPage;
+
+    group.qrs.forEach((qr, index) => {
+      const localIndex = index % itemsPerPage;
+      if (index > 0 && localIndex === 0) {
+        doc.addPage();
+        drawHeader();
+      }
+
+      const col = localIndex % itemsPerRow;
+      const row = Math.floor(localIndex / itemsPerRow);
+      const xPos = margin + col * (qrSize + spacing);
+      const yPos = 36 + row * rowSpacing;
+
+      const canvas = document.getElementById(getQrCanvasId(qr.uniqueHash));
+      if (!canvas) return;
+
+      const imgData = canvas.toDataURL("image/png");
+      doc.addImage(imgData, "PNG", xPos, yPos, qrSize, qrSize);
+
+      const perPrice = getGeneratedPrice(qr) || displayPrice;
+      doc.setFontSize(8);
+      doc.text(qr.uniqueHash.slice(0, 8), xPos, yPos + qrSize + 6);
+      doc.text(`INR ${formatAmount(perPrice)}`, xPos, yPos + qrSize + 12);
+    });
+
+    doc.save(`qrs-${priceLabel}-${format(new Date(), "yyyy-MM-dd-HHmm")}.pdf`);
+  };
+
+  const handleDeleteQrBatch = async ({ campaignId, priceKey, price, count }) => {
+    if (!token) return;
+    const priceLabel = formatAmount(price);
+    const confirmMessage = `Delete ${count} QR${count !== 1 ? "s" : ""} at INR ${priceLabel}? Only unused QRs will be removed.`;
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+
+    const batchKey = `${campaignId}-${priceKey ?? price}`;
+    setDeletingBatchKey(batchKey);
+    setQrError("");
+
+    try {
+      const result = await deleteVendorQrBatch(token, campaignId, priceKey ?? price);
+      const deleted = result.deleted ?? result.count ?? 0;
+      const skipped = result.skipped ?? 0;
+      if (skipped > 0) {
+        setStatusWithTimeout(`Deleted ${deleted} QRs. Skipped ${skipped} redeemed/blocked.`);
+      } else {
+        setStatusWithTimeout(`Deleted ${deleted} QRs from batch.`);
+      }
+      await loadQrs();
+    } catch (err) {
+      if (handleVendorAccessError(err)) return;
+      setQrError(err.message || "Failed to delete QR batch.");
+      setTimeout(() => setQrError(""), 3000);
+    } finally {
+      setDeletingBatchKey(null);
+    }
+  };
+
   const handlePrintQr = (hash) => {
     const canvas = document.getElementById(getQrCanvasId(hash));
     if (!canvas) {
@@ -205,6 +501,23 @@ const VendorDashboard = () => {
     setToken(null);
     setVendorInfo(null);
     setAuthStatus(message || "");
+    setLastBatchSummary(null);
+    setDeletingBatchKey(null);
+    lastAutoFilledCashbackRef.current = null;
+    setSubscriptionBlocked("");
+    setSubscriptionInfo(null);
+  };
+
+  const handleVendorAccessError = (err) => {
+    if (err?.status === 401) {
+      clearSession("Session expired.");
+      return true;
+    }
+    if (err?.status === 403) {
+      setSubscriptionBlocked(err.message || "Subscription access is inactive.");
+      return true;
+    }
+    return false;
   };
 
   const loadVendor = async (authToken) => {
@@ -233,9 +546,8 @@ const VendorDashboard = () => {
       const data = await getVendorWallet(authToken);
       setWallet(data);
     } catch (err) {
-      if (err.status === 401) {
-        clearSession("Session expired.");
-      } else if (err.status === 404) {
+      if (handleVendorAccessError(err)) return;
+      if (err.status === 404) {
         setWallet(null);
       } else {
         setWalletError(err.message || "Unable to load wallet.");
@@ -253,9 +565,8 @@ const VendorDashboard = () => {
       const data = await getVendorQrs(authToken);
       setQrs(Array.isArray(data) ? data : []);
     } catch (err) {
-      if (err.status === 401) {
-        clearSession("Session expired.");
-      } else if (err.status === 404) {
+      if (handleVendorAccessError(err)) return;
+      if (err.status === 404) {
         setQrs([]);
       } else {
         setQrError(err.message || "Unable to load QR inventory.");
@@ -277,9 +588,8 @@ const VendorDashboard = () => {
         address: data.address || "",
       });
     } catch (err) {
-      if (err.status === 401) {
-        clearSession("Session expired.");
-      } else if (err.status === 404) {
+      if (handleVendorAccessError(err)) return;
+      if (err.status === 404) {
         setCompanyProfile({
           businessName: "",
           contactPhone: "",
@@ -302,15 +612,17 @@ const VendorDashboard = () => {
         logoUrl: data.logoUrl || "",
         website: data.website || "",
       });
+      setSubscriptionInfo(data.subscription || data.Subscription || null);
+      setSubscriptionBlocked("");
     } catch (err) {
-      if (err.status === 401) {
-        clearSession("Session expired.");
-      } else if (err.status === 404) {
+      if (handleVendorAccessError(err)) return;
+      if (err.status === 404) {
         setBrandProfile({
           name: "",
           logoUrl: "",
           website: "",
         });
+        setSubscriptionInfo(null);
       } else {
         setRegistrationError(err.message || "Unable to load brand profile.");
       }
@@ -324,9 +636,8 @@ const VendorDashboard = () => {
       const data = await getVendorCampaigns(authToken);
       setCampaigns(Array.isArray(data) ? data : []);
     } catch (err) {
-      if (err.status === 401) {
-        clearSession("Session expired.");
-      } else if (err.status === 404) {
+      if (handleVendorAccessError(err)) return;
+      if (err.status === 404) {
         setCampaigns([]);
       } else {
         setCampaignError(err.message || "Unable to load campaigns.");
@@ -334,26 +645,84 @@ const VendorDashboard = () => {
     }
   };
 
+  const loadProducts = async (authToken = token) => {
+    if (!authToken) return;
+    setIsLoadingProducts(true);
+    setProductError("");
+    try {
+      const data = await getVendorProducts(authToken);
+      setProducts(Array.isArray(data) ? data : []);
+    } catch (err) {
+      if (handleVendorAccessError(err)) return;
+      if (err.status === 404) {
+        setProducts([]);
+      } else {
+        setProductError(err.message || "Unable to load products.");
+      }
+    } finally {
+      setIsLoadingProducts(false);
+    }
+  };
+
   useEffect(() => {
-    if (!token) return;
+    if (!token || subscriptionBlocked) return;
     loadVendor(token);
     loadWallet(token);
     loadQrs(token);
     loadCompanyProfile(token);
     loadBrandProfile(token);
     loadCampaigns(token);
-  }, [token]);
+    loadProducts(token);
+  }, [token, subscriptionBlocked]);
+
+  useEffect(() => {
+    if (!selectedCampaign) {
+      return;
+    }
+
+    const cashbackValue = effectiveCampaignCashback > 0 ? String(effectiveCampaignCashback) : "";
+
+    setQrRows((prev) => {
+      if (!prev.length) return prev;
+      const [first, ...rest] = prev;
+      const firstValueRaw = String(first.cashbackAmount || "").trim();
+      const firstValue = parseNumericValue(first.cashbackAmount, 0);
+      const autoFillValue = lastAutoFilledCashbackRef.current;
+      const shouldReplace =
+        !firstValueRaw || (autoFillValue !== null && firstValue === autoFillValue);
+
+      if (!shouldReplace || !cashbackValue) {
+        return prev;
+      }
+
+      lastAutoFilledCashbackRef.current = parseNumericValue(cashbackValue, 0);
+      return [{ ...first, cashbackAmount: cashbackValue }, ...rest];
+    });
+  }, [selectedCampaign, effectiveCampaignCashback]);
+
+  // Scroll to top on route/tab change
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }, [activeTab]);
 
   const handleSignIn = async () => {
-    if (!email.trim() || !password) {
-      setAuthError("Enter email and password to continue.");
+    const identifier = email.trim();
+    if (!identifier || !password) {
+      setAuthError("Enter email/username and password to continue.");
       return;
     }
     setAuthError("");
     setAuthStatus("");
+    setSubscriptionBlocked("");
     setIsSigningIn(true);
     try {
-      const data = await loginWithEmail(email.trim(), password);
+      const normalizedIdentifier = identifier.toLowerCase();
+      const isEmail = normalizedIdentifier.includes("@");
+      const data = await loginWithEmail(
+        isEmail ? normalizedIdentifier : undefined,
+        password,
+        isEmail ? undefined : normalizedIdentifier
+      );
       if (data.role !== "vendor") {
         throw new Error("This account is not a vendor.");
       }
@@ -364,7 +733,13 @@ const VendorDashboard = () => {
       setPassword("");
       setAuthStatus("Signed in successfully.");
     } catch (err) {
-      setAuthError(err.message || "Sign in failed.");
+      if (err?.status === 403) {
+        const message = err.message || "Subscription is not active.";
+        setSubscriptionBlocked(message);
+        setAuthError(message);
+      } else {
+        setAuthError(err.message || "Sign in failed.");
+      }
     } finally {
       setIsSigningIn(false);
     }
@@ -391,6 +766,7 @@ const VendorDashboard = () => {
     });
     setCampaigns([]);
     setCampaignId("");
+    setLastBatchSummary(null);
   };
 
   const handleRecharge = async () => {
@@ -408,6 +784,7 @@ const VendorDashboard = () => {
       setRechargeAmount("");
       await loadWallet();
     } catch (err) {
+      if (handleVendorAccessError(err)) return;
       setWalletError(err.message || "Recharge failed.");
     } finally {
       setIsRecharging(false);
@@ -415,35 +792,124 @@ const VendorDashboard = () => {
   };
 
   const handleOrderQrs = async () => {
-    const quantityValue = parseInt(qrQuantity, 10);
-    if (!campaignId.trim()) {
-      setQrOrderError("Enter a campaign ID.");
+    if (!selectedQrCampaign) {
+      setQrOrderError("Please select a campaign first.");
       return;
     }
-    if (!Number.isFinite(quantityValue) || quantityValue <= 0) {
-      setQrOrderError("Enter a valid quantity.");
+    if (!selectedQrProduct) {
+      setQrOrderError("Please select a product first.");
       return;
     }
+
+    const campaign = campaigns.find((c) => c.id === selectedQrCampaign);
+    if (!campaign || campaign.status !== "active") {
+      setQrOrderError("Selected campaign is not active.");
+      return;
+    }
+
+    // Get cashback and quantity from campaignRows (allocations)
+    const validRows = campaignRows.filter((row) => Number(row.cashbackAmount) > 0 && Number(row.quantity) > 0);
+
+    // If no valid allocations in campaign, use campaign's default cashback
+    const rowsToUse = validRows.length > 0 ? validRows : [{
+      cashbackAmount: campaign.cashbackAmount || 0,
+      quantity: 1
+    }];
+
+    if (rowsToUse.length === 0 || (rowsToUse[0].cashbackAmount <= 0)) {
+      setQrOrderError("Please set cashback amount in campaign allocations.");
+      return;
+    }
+
     setIsOrdering(true);
     setQrOrderError("");
     setQrOrderStatus("");
+
+    const batchTiers = rowsToUse
+      .map((row) => {
+        const price = parseNumericValue(row.cashbackAmount, 0);
+        const quantityValue = Math.max(0, Math.floor(Number(row.quantity) || 0));
+        if (price <= 0 || quantityValue <= 0) return null;
+        return {
+          price,
+          quantity: quantityValue,
+          cost: price * quantityValue,
+        };
+      })
+      .filter(Boolean);
+
+    const uniquePrices = Array.from(new Set(batchTiers.map((tier) => tier.price)));
+    const desiredCashback = uniquePrices.length === 1 ? uniquePrices[0] : null;
+    const desiredBudget = batchTiers.reduce((sum, tier) => sum + tier.cost, 0);
+
+    // Skip the campaign update confirmation - just proceed with QR generation
+
+    let successes = 0;
+    let failures = 0;
+    const newHashes = [];
+
     try {
-      const result = await orderVendorQrs(token, campaignId.trim(), quantityValue);
-      setQrOrderStatus(`Generated ${result.count} QRs successfully.`);
-      setLastOrderHashes(
-        Array.isArray(result.qrs)
-          ? result.qrs.slice(0, 5).map((item) => item.uniqueHash)
-          : []
-      );
-      setCampaignId("");
-      await loadWallet();
-      await loadQrs();
+      for (const row of rowsToUse) {
+        try {
+          // Use the selected campaign for all rows, pass per-row cashbackAmount
+          const result = await orderVendorQrs(token, selectedQrCampaign, Number(row.quantity), Number(row.cashbackAmount));
+          successes += result.count || 0;
+          if (Array.isArray(result.qrs)) {
+            newHashes.push(...result.qrs.map((item) => item.uniqueHash));
+          }
+        } catch (err) {
+          if (handleVendorAccessError(err)) {
+            throw err;
+          }
+          const errorMsg = err.message || `Failed to generate QRs for cashback ₹${row.cashbackAmount}`;
+          console.error(errorMsg, err);
+          // Show the actual error to user
+          if (err.message?.includes('Insufficient') || err.message?.includes('balance')) {
+            setQrOrderError(`Insufficient wallet balance. Please top up your wallet first.`);
+            setIsOrdering(false);
+            return;
+          }
+          failures++;
+        }
+      }
+
+      if (failures > 0 && successes === 0) {
+        setQrOrderStatus("");
+        setQrOrderError("QR generation failed. Please check your allocations and wallet balance.");
+      } else {
+        setQrOrderStatus(
+          `Generated ${successes} QRs successfully.` + (failures > 0 ? ` (${failures} batches failed)` : "")
+        );
+      }
+
+      if (successes > 0 && batchTiers.length > 0) {
+        setLastBatchSummary({
+          id: Date.now(),
+          campaignTitle: campaign?.title || "Campaign",
+          timestamp: new Date().toISOString(),
+          tiers: batchTiers,
+          totalQrs: successes,
+          totalCost: batchTiers.reduce((sum, tier) => sum + tier.cost, 0),
+          hashes: newHashes.slice(0, 50),
+        });
+      }
+      if (newHashes.length > 0) {
+        setLastOrderHashes(newHashes.slice(0, 10));
+        await loadWallet();
+        await loadQrs();
+      }
+      if (failures === 0) {
+        setQrRows([{ id: Date.now(), cashbackAmount: "", quantity: 10 }]);
+      }
     } catch (err) {
+      if (handleVendorAccessError(err)) return;
       setQrOrderError(err.message || "QR generation failed.");
     } finally {
       setIsOrdering(false);
     }
   };
+
+
 
   const handleVerifyQr = async () => {
     if (!scanHash.trim()) {
@@ -486,6 +952,7 @@ const VendorDashboard = () => {
       await loadWallet();
       await loadQrs();
     } catch (err) {
+      if (handleVendorAccessError(err)) return;
       setScanError(err.message || "Redemption failed.");
     } finally {
       setIsRedeeming(false);
@@ -498,19 +965,9 @@ const VendorDashboard = () => {
     setRegistrationError("");
   };
 
-  const handleBrandChange = (field) => (event) => {
-    setBrandProfile((prev) => ({ ...prev, [field]: event.target.value }));
-    setRegistrationStatus("");
-    setRegistrationError("");
-  };
-
   const handleRegistrationSave = async () => {
     if (!companyProfile.businessName.trim()) {
       setRegistrationError("Company name is required.");
-      return;
-    }
-    if (!brandProfile.name.trim()) {
-      setRegistrationError("Brand name is required.");
       return;
     }
     setRegistrationError("");
@@ -523,17 +980,11 @@ const VendorDashboard = () => {
         gstin: companyProfile.gstin.trim() || null,
         address: companyProfile.address.trim() || null,
       });
-      await upsertVendorBrand(token, {
-        name: brandProfile.name.trim(),
-        logoUrl: brandProfile.logoUrl.trim() || null,
-        website: brandProfile.website.trim() || null,
-      });
-      setRegistrationStatus("Brand registration saved.");
+      setRegistrationStatus("Company profile updated.");
       await loadCompanyProfile();
-      await loadBrandProfile();
-      await loadCampaigns();
     } catch (err) {
-      setRegistrationError(err.message || "Unable to save registration.");
+      if (handleVendorAccessError(err)) return;
+      setRegistrationError(err.message || "Unable to save profile.");
     } finally {
       setIsSavingRegistration(false);
     }
@@ -555,49 +1006,232 @@ const VendorDashboard = () => {
       setCampaignError("Campaign title is required.");
       return;
     }
-    const cashbackValue = parseFloat(campaignForm.cashbackAmount);
-    if (!Number.isFinite(cashbackValue) || cashbackValue <= 0) {
-      setCampaignError("Enter a valid cashback amount.");
-      return;
+    // Calculate total allocations from rows
+    let calculatedTotalBudget = 0;
+    let firstCashbackValue = 0;
+
+    if (campaignRows.length > 0) {
+      firstCashbackValue = parseFloat(campaignRows[0].cashbackAmount) || 0;
     }
+
+    for (const row of campaignRows) {
+      // Skip empty rows
+      if (!row.cashbackAmount && !row.quantity && !row.totalBudget) continue;
+
+      const cb = parseFloat(row.cashbackAmount);
+      const total = parseFloat(row.totalBudget);
+
+      if (isNaN(cb) || cb < 0) {
+        setCampaignError("Invalid cashback amount in allocations.");
+        return;
+      }
+      if (isNaN(total) || total < 0) {
+        setCampaignError("Invalid total budget/cost in allocations.");
+        return;
+      }
+      calculatedTotalBudget += (total || 0);
+    }
+
+    const cashbackValue = firstCashbackValue;
+    const budgetValue = calculatedTotalBudget > 0 ? calculatedTotalBudget : null;
     if (!campaignForm.startDate || !campaignForm.endDate) {
       setCampaignError("Start and end dates are required.");
-      return;
-    }
-    const budgetValue = campaignForm.totalBudget.trim()
-      ? parseFloat(campaignForm.totalBudget)
-      : null;
-    if (campaignForm.totalBudget.trim() && (!Number.isFinite(budgetValue) || budgetValue <= 0)) {
-      setCampaignError("Enter a valid total budget or leave it empty.");
       return;
     }
     setCampaignError("");
     setCampaignStatus("");
     setIsSavingCampaign(true);
     try {
-      const campaign = await createVendorCampaign(token, {
+      // Get the vendor's brand first - or try to derive from selected product
+      let brand;
+      let derivedBrandId = null;
+
+      // Check if we can get brandId from selected product
+      if (campaignForm.productId) {
+        const product = products.find(p => p.id === campaignForm.productId);
+        if (product && product.brandId) {
+          derivedBrandId = product.brandId;
+        }
+      }
+
+      try {
+        brand = await getVendorBrand(token);
+      } catch (brandErr) {
+        // If getting brand profile fails, we might still proceed if we have a derived brand ID
+        if (!derivedBrandId) {
+          if (handleVendorAccessError(brandErr)) return;
+          setCampaignError("No brand is assigned yet. Please contact the admin or select a product.");
+          setIsSavingCampaign(false);
+          return;
+        }
+      }
+
+      const effectiveBrandId = derivedBrandId || brand?.id;
+
+      if (!effectiveBrandId) {
+        setCampaignError("Unable to determine brand for this campaign. Please select a product.");
+        setIsSavingCampaign(false);
+        return;
+      }
+
+      await createVendorCampaign(token, {
+        brandId: effectiveBrandId,
         title: campaignForm.title.trim(),
-        description: campaignForm.description.trim() || null,
-        cashbackAmount: cashbackValue,
+        description: campaignForm.description.trim() || undefined,
         startDate: campaignForm.startDate,
         endDate: campaignForm.endDate,
         totalBudget: budgetValue,
+        subtotal: budgetValue,
+        allocations: campaignRows.map(row => ({
+          productId: campaignForm.productId || null,
+          cashbackAmount: parseFloat(row.cashbackAmount) || 0,
+          quantity: parseInt(row.quantity) || 0,
+          totalBudget: parseFloat(row.totalBudget) || 0
+        }))
       });
       setCampaignStatusWithTimeout("Campaign created.");
       setCampaignForm({
         title: "",
         description: "",
         cashbackAmount: "",
+        totalBudget: "",
         startDate: "",
         endDate: "",
-        totalBudget: "",
+        productId: "",
       });
-      setCampaignId(campaign.id);
+      // result from createVendorCampaign structure is { message, campaign }
+      // But we can just reload campaigns.
       await loadCampaigns();
     } catch (err) {
-      setCampaignError(err.message || "Campaign creation failed.");
+      if (handleVendorAccessError(err)) return;
+      console.error("Campaign creation error:", err);
+      setCampaignError(err.error || err.message || "Campaign creation failed.");
     } finally {
       setIsSavingCampaign(false);
+    }
+  };
+
+  const handlePayCampaign = async (campaign) => {
+    if (!campaign) return;
+    setIsPayingCampaign(true);
+    setCampaignError("");
+
+    try {
+      const totalQty = (campaign.allocations || []).reduce((sum, a) => sum + (parseInt(a.quantity) || 0), 0);
+      const printCost = totalQty * 1;
+      const totalCost = parseFloat(campaign.totalBudget) + printCost;
+
+      if (!wallet || wallet.balance < totalCost) {
+        throw new Error(`Insufficient wallet balance. Required: ₹${totalCost.toFixed(2)}`);
+      }
+
+      await payVendorCampaign(token, campaign.id);
+
+      setCampaignStatusWithTimeout("Campaign paid and activated!");
+      setSelectedPendingCampaign(null);
+      await loadWallet();
+      await loadCampaigns(); // To move it to active list
+    } catch (err) {
+      if (handleVendorAccessError(err)) return;
+      console.error("Payment error:", err);
+      // Show error in the main dashboard or a toast? 
+      // For now, using the main error state which might be visible behind modal or we can alert.
+      // Actually, let's set it so it renders inside modal via a local state if we had one, but global is okay for now.
+      alert(err.message || "Payment failed");
+    } finally {
+      setIsPayingCampaign(false);
+    }
+  };
+
+  const handleDeleteCampaign = async (campaignIdValue) => {
+    if (!token || !campaignIdValue) return;
+    const campaign = campaigns.find((item) => item.id === campaignIdValue);
+    const name = campaign?.title || "this campaign";
+    if (!window.confirm(`Delete ${name}? All QRs for this campaign will be removed.`)) {
+      return;
+    }
+
+    setDeletingCampaignId(campaignIdValue);
+    setCampaignError("");
+    setCampaignStatus("");
+    try {
+      await deleteVendorCampaign(token, campaignIdValue);
+      setCampaigns((prev) => prev.filter((item) => item.id !== campaignIdValue));
+      if (selectedQrCampaign === campaignIdValue) {
+        setSelectedQrCampaign("");
+        setQrRows([{ id: Date.now(), cashbackAmount: "", quantity: 10 }]);
+      }
+      setQrs((prev) => prev.filter((qr) => qr.campaignId !== campaignIdValue));
+      setCampaignStatusWithTimeout("Campaign deleted.");
+    } catch (err) {
+      if (handleVendorAccessError(err)) return;
+      setCampaignError(err.message || "Unable to delete campaign.");
+    } finally {
+      setDeletingCampaignId(null);
+    }
+  };
+
+  const handleProductChange = (field) => (event) => {
+    setProductForm((prev) => ({ ...prev, [field]: event.target.value }));
+    setProductStatus("");
+    setProductError("");
+  };
+
+  const setProductStatusWithTimeout = (message) => {
+    setProductStatus(message);
+    setTimeout(() => setProductStatus(""), 2000);
+  };
+
+  const handleAddProduct = async () => {
+    if (!productForm.name.trim()) {
+      setProductError("Product name is required.");
+      return;
+    }
+
+    setProductError("");
+    setProductStatus("");
+    setIsSavingProduct(true);
+
+    try {
+      // Get the vendor's first brand
+      let brand;
+      try {
+        brand = await getVendorBrand(token);
+      } catch (brandErr) {
+        if (handleVendorAccessError(brandErr)) return;
+        setProductError("No brand is assigned yet. Please contact the admin.");
+        setIsSavingProduct(false);
+        return;
+      }
+
+      if (!brand?.id) {
+        setProductError("No brand is assigned yet. Please contact the admin.");
+        setIsSavingProduct(false);
+        return;
+      }
+
+      await addVendorProduct(token, {
+        brandId: brand.id,
+        name: productForm.name.trim(),
+        variant: productForm.variant.trim() || null,
+        category: productForm.category.trim() || null,
+        description: productForm.description.trim() || null,
+        imageUrl: productForm.imageUrl.trim() || null,
+      });
+      setProductStatusWithTimeout("Product added successfully.");
+      setProductForm({
+        name: "",
+        variant: "",
+        category: "",
+        description: "",
+        imageUrl: "",
+      });
+      await loadProducts();
+    } catch (err) {
+      if (handleVendorAccessError(err)) return;
+      setProductError(err.message || "Failed to add product.");
+    } finally {
+      setIsSavingProduct(false);
     }
   };
 
@@ -609,10 +1243,76 @@ const VendorDashboard = () => {
     return { total, redeemed, active };
   }, [qrs]);
 
+  const overviewCampaignOptions = useMemo(() => {
+    const options = [{ id: "all", label: "All campaigns" }];
+    const sortedCampaigns = [...campaigns].sort((a, b) =>
+      String(a.title || "").localeCompare(String(b.title || ""))
+    );
+    sortedCampaigns.forEach((campaign) => {
+      options.push({
+        id: campaign.id,
+        label: campaign.title || "Untitled campaign",
+      });
+    });
+    const hasUnassigned = qrs.some((qr) => !(qr.Campaign?.id || qr.campaignId));
+    if (hasUnassigned) {
+      options.push({ id: "unassigned", label: "Unassigned QRs" });
+    }
+    return options;
+  }, [campaigns, qrs]);
+
+  useEffect(() => {
+    const isValidSelection = overviewCampaignOptions.some(
+      (option) => option.id === overviewCampaignId
+    );
+    if (!isValidSelection) {
+      setOverviewCampaignId("all");
+    }
+  }, [overviewCampaignId, overviewCampaignOptions]);
+
+  const overviewFilteredQrs = useMemo(() => {
+    if (overviewCampaignId === "all") return qrs;
+    if (overviewCampaignId === "unassigned") {
+      return qrs.filter((qr) => !(qr.Campaign?.id || qr.campaignId));
+    }
+    return qrs.filter(
+      (qr) => (qr.Campaign?.id || qr.campaignId) === overviewCampaignId
+    );
+  }, [overviewCampaignId, qrs]);
+
+  const overviewQrStatusCounts = useMemo(() => {
+    const counts = {
+      total: 0,
+      generated: 0,
+      assigned: 0,
+      active: 0,
+      redeemed: 0,
+      expired: 0,
+      blocked: 0,
+      unknown: 0,
+    };
+
+    overviewFilteredQrs.forEach((qr) => {
+      counts.total += 1;
+      const status = String(qr.status || "unknown").toLowerCase();
+      if (status === "claimed") {
+        counts.redeemed += 1;
+        return;
+      }
+      if (counts[status] !== undefined) {
+        counts[status] += 1;
+      } else {
+        counts.unknown += 1;
+      }
+    });
+
+    return counts;
+  }, [overviewFilteredQrs]);
+
   const recentQrs = useMemo(() => {
     return [...qrs]
       .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
-      .slice(0, 6);
+      .slice(0, 12);
   }, [qrs]);
 
   const qrGallery = useMemo(() => {
@@ -623,781 +1323,1617 @@ const VendorDashboard = () => {
     return showAllInventory ? qrGallery : recentQrs;
   }, [showAllInventory, qrGallery, recentQrs]);
 
+  // Group QRs by Campaign first, then by price within each campaign
+  const qrsGroupedByCampaign = useMemo(() => {
+    const campaignMap = {};
+
+    qrs.forEach((qr) => {
+      const campaignId = qr.Campaign?.id || 'unassigned';
+      const campaignTitle = qr.Campaign?.title || 'Unassigned';
+      const price = getGeneratedPrice(qr);
+      const priceKey = price.toFixed(2);
+
+      if (!campaignMap[campaignId]) {
+        campaignMap[campaignId] = {
+          id: campaignId,
+          title: campaignTitle,
+          endDate: qr.Campaign?.endDate,
+          status: qr.Campaign?.status,
+          priceGroups: {},
+          stats: { total: 0, active: 0, redeemed: 0 }
+        };
+      }
+
+      if (!campaignMap[campaignId].priceGroups[priceKey]) {
+        campaignMap[campaignId].priceGroups[priceKey] = {
+          price,
+          priceKey,
+          qrs: [],
+          activeCount: 0,
+          redeemedCount: 0
+        };
+      }
+
+      const group = campaignMap[campaignId].priceGroups[priceKey];
+      group.qrs.push(qr);
+      campaignMap[campaignId].stats.total++;
+
+      if (qr.status === 'redeemed') {
+        group.redeemedCount++;
+        campaignMap[campaignId].stats.redeemed++;
+      } else {
+        group.activeCount++;
+        campaignMap[campaignId].stats.active++;
+      }
+    });
+
+    return Object.values(campaignMap)
+      .map((campaign) => ({
+        ...campaign,
+        priceGroups: Object.values(campaign.priceGroups).sort((a, b) => b.price - a.price)
+      }))
+      .sort((a, b) => {
+        if (a.id === 'unassigned') return 1;
+        if (b.id === 'unassigned') return -1;
+        return a.title.localeCompare(b.title);
+      });
+  }, [qrs]);
+
+  const primaryQrRow = qrRows[0];
+  const primaryQrCashback = parseNumericValue(primaryQrRow?.cashbackAmount, 0);
+  const primaryQrQuantity = Math.max(0, Math.floor(Number(primaryQrRow?.quantity) || 0));
+  const primaryQrCost = primaryQrCashback * primaryQrQuantity;
+  const canGenerateQrs =
+    Boolean(selectedQrCampaign) && primaryQrCashback > 0 && primaryQrQuantity > 0;
+
   const walletBalance = wallet?.balance;
   const lockedBalance = wallet?.lockedBalance;
 
   return (
-    <div className="p-4 pb-24 space-y-4 bg-primary/10 dark:bg-zinc-950 min-h-full transition-colors duration-300">
-      {!isAuthenticated && (
-        <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-100 dark:border-zinc-800 p-4 shadow-sm space-y-3">
-          <div className="flex items-center gap-2 text-sm font-semibold text-gray-800 dark:text-gray-200">
-            <ShieldCheck size={16} className="text-primary-strong" />
-            Vendor access
+    <div className="min-h-screen bg-gray-50 dark:bg-[#0a0a0a] text-gray-900 dark:text-gray-100 p-6">
+      {subscriptionBlocked ? (
+        <div className="mx-auto max-w-md bg-white dark:bg-[#121212] rounded-2xl border border-gray-100 dark:border-gray-800 p-6 shadow-xl space-y-4 text-center">
+          <div className="flex items-center justify-center gap-2 text-base font-semibold text-gray-900 dark:text-white">
+            <ShieldCheck size={18} className="text-rose-400" />
+            {subscriptionHeading}
           </div>
-          <div className="space-y-2">
-            <label className="text-xs font-semibold text-gray-500 dark:text-gray-400">
-              Email
-            </label>
-            <input
-              type="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              placeholder="vendor@brand.com"
-              className="w-full rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-gray-900 dark:text-gray-100"
-            />
-          </div>
-          <div className="space-y-2">
-            <label className="text-xs font-semibold text-gray-500 dark:text-gray-400">
-              Password
-            </label>
-            <input
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              placeholder="Enter password"
-              className="w-full rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-gray-900 dark:text-gray-100"
-            />
+          <div className="text-xs text-gray-400">{subscriptionBlocked}</div>
+          <div className="flex flex-wrap justify-center gap-2">
+            <span className={`px-3 py-1 rounded-full text-[10px] font-semibold ${subscriptionBadgeClass}`}>
+              {subscriptionStatusLabel}
+            </span>
+            <span className="px-3 py-1 rounded-full bg-white/5 text-[10px] text-gray-400">
+              Plan: {subscriptionPlanLabel}
+            </span>
+            <span className="px-3 py-1 rounded-full bg-white/5 text-[10px] text-gray-400">
+              Ends: {subscriptionEndsAt}
+            </span>
           </div>
           <button
             type="button"
-            onClick={handleSignIn}
-            disabled={isSigningIn}
-            className="w-full rounded-xl bg-primary text-white text-sm font-semibold py-2 shadow-md disabled:opacity-60"
+            onClick={handleSignOut}
+            className="w-full rounded-xl bg-white/10 text-white text-sm font-semibold py-2 hover:bg-white/20 transition-colors"
           >
-            {isSigningIn ? "Signing in..." : "Sign in"}
+            Back to login
           </button>
-          {authStatus && (
-            <div className="text-xs text-green-600 font-semibold">{authStatus}</div>
-          )}
-          {authError && <div className="text-xs text-red-600 font-semibold">{authError}</div>}
         </div>
-      )}
-
-      {isAuthenticated && (
+      ) : (
         <>
-          <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-100 dark:border-zinc-800 p-4 shadow-sm space-y-3">
-            <div className="flex items-center justify-between">
+          {!isAuthenticated && (
+            <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-100 dark:border-zinc-800 p-4 shadow-sm space-y-3">
               <div className="flex items-center gap-2 text-sm font-semibold text-gray-800 dark:text-gray-200">
-                <Store size={16} className="text-primary-strong" />
-                Vendor dashboard
+                <ShieldCheck size={16} className="text-primary-strong" />
+                Vendor access
               </div>
-              <button
-                type="button"
-                onClick={handleSignOut}
-                className="flex items-center gap-1 text-xs font-semibold text-gray-500 dark:text-gray-400"
-              >
-                <LogOut size={14} />
-                Sign out
-              </button>
-            </div>
-            <div className="text-xs text-gray-500 dark:text-gray-400">
-              {vendorInfo?.name || "Vendor account"}
-              {vendorInfo?.email ? ` - ${vendorInfo.email}` : ""}
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-              <div className="rounded-xl border border-gray-100 dark:border-zinc-800 bg-primary/10 dark:bg-zinc-900 p-3">
-                <div className="text-[10px] text-gray-500 dark:text-gray-400">Wallet</div>
-                <div className="text-sm font-bold text-gray-900 dark:text-gray-100">
-                  INR {formatAmount(walletBalance)}
-                </div>
-              </div>
-              <div className="rounded-xl border border-gray-100 dark:border-zinc-800 bg-primary/10 dark:bg-zinc-900 p-3">
-                <div className="text-[10px] text-gray-500 dark:text-gray-400">Active QRs</div>
-                <div className="text-sm font-bold text-gray-900 dark:text-gray-100">
-                  {qrStats.active}
-                </div>
-              </div>
-              <div className="rounded-xl border border-gray-100 dark:border-zinc-800 bg-primary/10 dark:bg-zinc-900 p-3">
-                <div className="text-[10px] text-gray-500 dark:text-gray-400">Redeemed</div>
-                <div className="text-sm font-bold text-gray-900 dark:text-gray-100">
-                  {qrStats.redeemed}
-                </div>
-              </div>
-            </div>
-          {authStatus && (
-            <div className="text-xs text-green-600 font-semibold">{authStatus}</div>
-          )}
-          {authError && <div className="text-xs text-red-600 font-semibold">{authError}</div>}
-        </div>
-
-        <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-100 dark:border-zinc-800 p-4 shadow-sm space-y-3">
-          <div className="flex items-center gap-2 text-sm font-semibold text-gray-800 dark:text-gray-200">
-            <Store size={16} className="text-primary-strong" />
-            Brand registration
-          </div>
-          <div className="text-xs text-gray-500 dark:text-gray-400">
-            Register your company and brand before creating campaigns.
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <label className="text-xs font-semibold text-gray-500 dark:text-gray-400">
-                Company name
-              </label>
-              <input
-                type="text"
-                value={companyProfile.businessName}
-                onChange={handleCompanyChange("businessName")}
-                placeholder="Legal company name"
-                className="w-full rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-gray-900 dark:text-gray-100"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-semibold text-gray-500 dark:text-gray-400">
-                Brand name
-              </label>
-              <input
-                type="text"
-                value={brandProfile.name}
-                onChange={handleBrandChange("name")}
-                placeholder="Brand display name"
-                className="w-full rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-gray-900 dark:text-gray-100"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-semibold text-gray-500 dark:text-gray-400">
-                Logo URL
-              </label>
-              <input
-                type="text"
-                value={brandProfile.logoUrl}
-                onChange={handleBrandChange("logoUrl")}
-                placeholder="https://..."
-                className="w-full rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-gray-900 dark:text-gray-100"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-semibold text-gray-500 dark:text-gray-400">
-                Website
-              </label>
-              <input
-                type="text"
-                value={brandProfile.website}
-                onChange={handleBrandChange("website")}
-                placeholder="https://brand.com"
-                className="w-full rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-gray-900 dark:text-gray-100"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-semibold text-gray-500 dark:text-gray-400">
-                Contact phone
-              </label>
-              <input
-                type="tel"
-                value={companyProfile.contactPhone}
-                onChange={handleCompanyChange("contactPhone")}
-                placeholder="Primary contact"
-                className="w-full rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-gray-900 dark:text-gray-100"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-semibold text-gray-500 dark:text-gray-400">
-                GSTIN
-              </label>
-              <input
-                type="text"
-                value={companyProfile.gstin}
-                onChange={handleCompanyChange("gstin")}
-                placeholder="GSTIN"
-                className="w-full rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-gray-900 dark:text-gray-100"
-              />
-            </div>
-          </div>
-          <div className="space-y-1">
-            <label className="text-xs font-semibold text-gray-500 dark:text-gray-400">
-              Registered address
-            </label>
-            <textarea
-              rows="3"
-              value={companyProfile.address}
-              onChange={handleCompanyChange("address")}
-              placeholder="Full registered address"
-              className="w-full rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-gray-900 dark:text-gray-100"
-            />
-          </div>
-          <button
-            type="button"
-            onClick={handleRegistrationSave}
-            disabled={isSavingRegistration}
-            className="w-full rounded-xl bg-primary text-white text-sm font-semibold py-2 shadow-md disabled:opacity-60"
-          >
-            {isSavingRegistration ? "Saving..." : "Save registration"}
-          </button>
-          {registrationStatus && (
-            <div className="text-xs text-green-600 font-semibold">{registrationStatus}</div>
-          )}
-          {registrationError && (
-            <div className="text-xs text-red-600 font-semibold">{registrationError}</div>
-          )}
-        </div>
-
-        <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-100 dark:border-zinc-800 p-4 shadow-sm space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-sm font-semibold text-gray-800 dark:text-gray-200">
-              <BadgeCheck size={16} className="text-primary-strong" />
-              Campaigns
-            </div>
-            <button
-              type="button"
-              onClick={() => loadCampaigns()}
-              className="flex items-center gap-1 text-xs font-semibold text-gray-500 dark:text-gray-400"
-            >
-              <RefreshCw size={12} />
-              Refresh
-            </button>
-          </div>
-          <div className="space-y-2">
-            <label className="text-xs font-semibold text-gray-500 dark:text-gray-400">
-              Campaign title
-            </label>
-            <input
-              type="text"
-              value={campaignForm.title}
-              onChange={handleCampaignChange("title")}
-              placeholder="e.g. Diwali Cashback"
-              className="w-full rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-gray-900 dark:text-gray-100"
-            />
-          </div>
-          <div className="space-y-2">
-            <label className="text-xs font-semibold text-gray-500 dark:text-gray-400">
-              Description
-            </label>
-            <textarea
-              rows="2"
-              value={campaignForm.description}
-              onChange={handleCampaignChange("description")}
-              placeholder="Short campaign summary"
-              className="w-full rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-gray-900 dark:text-gray-100"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-gray-500 dark:text-gray-400">
-                Cashback amount (INR)
-              </label>
-              <input
-                type="number"
-                min="1"
-                value={campaignForm.cashbackAmount}
-                onChange={handleCampaignChange("cashbackAmount")}
-                placeholder="e.g. 50"
-                className="w-full rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-gray-900 dark:text-gray-100"
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-gray-500 dark:text-gray-400">
-                Total budget (optional)
-              </label>
-              <input
-                type="number"
-                min="1"
-                value={campaignForm.totalBudget}
-                onChange={handleCampaignChange("totalBudget")}
-                placeholder="e.g. 100000"
-                className="w-full rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-gray-900 dark:text-gray-100"
-              />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-gray-500 dark:text-gray-400">
-                Start date
-              </label>
-              <input
-                type="date"
-                value={campaignForm.startDate}
-                onChange={handleCampaignChange("startDate")}
-                className="w-full rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-gray-900 dark:text-gray-100"
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-gray-500 dark:text-gray-400">
-                End date
-              </label>
-              <input
-                type="date"
-                value={campaignForm.endDate}
-                onChange={handleCampaignChange("endDate")}
-                className="w-full rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-gray-900 dark:text-gray-100"
-              />
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={handleCreateCampaign}
-            disabled={isSavingCampaign}
-            className="w-full rounded-xl bg-gray-900 text-white text-sm font-semibold py-2 shadow-md disabled:opacity-60 dark:bg-white dark:text-gray-900"
-          >
-            {isSavingCampaign ? "Creating..." : "Create campaign"}
-          </button>
-          {campaignStatus && (
-            <div className="text-xs text-green-600 font-semibold">{campaignStatus}</div>
-          )}
-          {campaignError && (
-            <div className="text-xs text-red-600 font-semibold">{campaignError}</div>
-          )}
-          <div className="space-y-2">
-            {campaigns.length === 0 ? (
-              <div className="text-xs text-gray-500 dark:text-gray-400">
-                No campaigns yet.
-              </div>
-            ) : (
-              campaigns.map((campaign) => (
-                <div
-                  key={campaign.id}
-                  className="flex items-center justify-between rounded-xl border border-gray-100 dark:border-zinc-800 px-3 py-2"
-                >
-                  <div>
-                    <div className="text-xs font-semibold text-gray-700 dark:text-gray-300">
-                      {campaign.title}
-                    </div>
-                    <div className="text-[10px] text-gray-500 dark:text-gray-400">
-                      INR {formatAmount(campaign.cashbackAmount)} · {campaign.status}
-                    </div>
-                  </div>
-                  <div className="flex flex-col items-end gap-1">
-                    <div className="text-[10px] text-gray-500 dark:text-gray-400">
-                      {campaign.id.slice(0, 10)}...
-                    </div>
-                    <div className="flex items-center gap-2 text-[10px] font-semibold">
-                      <button
-                        type="button"
-                        onClick={() => setCampaignId(campaign.id)}
-                        className="text-primary-strong dark:text-primary"
-                      >
-                        Use
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleCopyCampaignId(campaign.id)}
-                        className="text-gray-600 dark:text-gray-300"
-                      >
-                        Copy ID
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-
-        <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-100 dark:border-zinc-800 p-4 shadow-sm space-y-3">
-          <div className="flex items-center gap-2 text-sm font-semibold text-gray-800 dark:text-gray-200">
-            <Wallet size={16} className="text-primary-strong" />
-            Wallet controls
-          </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-xl border border-gray-100 dark:border-zinc-800 p-3">
-                <div className="text-[10px] text-gray-500 dark:text-gray-400">Balance</div>
-                <div className="text-sm font-bold text-gray-900 dark:text-gray-100">
-                  INR {formatAmount(walletBalance)}
-                </div>
-              </div>
-              <div className="rounded-xl border border-gray-100 dark:border-zinc-800 p-3">
-                <div className="text-[10px] text-gray-500 dark:text-gray-400">
-                  Locked balance
-                </div>
-                <div className="text-sm font-bold text-gray-900 dark:text-gray-100">
-                  INR {formatAmount(lockedBalance)}
-                </div>
-              </div>
-            </div>
-            {isLoadingWallet && (
-              <div className="text-xs text-gray-500 dark:text-gray-400">Loading wallet...</div>
-            )}
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-gray-500 dark:text-gray-400">
-                Recharge amount
-              </label>
-              <input
-                type="number"
-                min="1"
-                value={rechargeAmount}
-                onChange={(event) => setRechargeAmount(event.target.value)}
-                placeholder="Enter amount in INR"
-                className="w-full rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-gray-900 dark:text-gray-100"
-              />
-              <button
-                type="button"
-                onClick={handleRecharge}
-                disabled={isRecharging}
-                className="w-full rounded-xl bg-gray-900 text-white text-sm font-semibold py-2 shadow-md disabled:opacity-60 dark:bg-white dark:text-gray-900"
-              >
-                {isRecharging ? "Recharging..." : "Recharge wallet"}
-              </button>
-            </div>
-            {walletStatus && (
-              <div className="text-xs text-green-600 font-semibold">{walletStatus}</div>
-            )}
-            {walletError && <div className="text-xs text-red-600 font-semibold">{walletError}</div>}
-          </div>
-
-          <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-100 dark:border-zinc-800 p-4 shadow-sm space-y-3">
-            <div className="flex items-center gap-2 text-sm font-semibold text-gray-800 dark:text-gray-200">
-              <QrCode size={16} className="text-primary-strong" />
-              Generate QR batch
-            </div>
-            {campaigns.length === 0 ? (
-              <div className="text-xs text-gray-500 dark:text-gray-400">
-                No campaigns yet. Create a campaign to generate QRs.
-              </div>
-            ) : (
               <div className="space-y-2">
                 <label className="text-xs font-semibold text-gray-500 dark:text-gray-400">
-                  Select campaign
+                  Email or Username
                 </label>
-                <select
-                  value={campaignId}
-                  onChange={(event) => setCampaignId(event.target.value)}
+                <input
+                  type="text"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  placeholder="brand username or email"
                   className="w-full rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-gray-900 dark:text-gray-100"
-                >
-                  <option value="">Select a campaign</option>
-                  {campaigns.map((campaign) => (
-                    <option key={campaign.id} value={campaign.id}>
-                      {campaign.title}
-                    </option>
-                  ))}
-                </select>
+                />
               </div>
-            )}
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-gray-500 dark:text-gray-400">
-                Campaign ID
-              </label>
-              <input
-                type="text"
-                value={campaignId}
-                onChange={(event) => setCampaignId(event.target.value)}
-                placeholder="Paste campaign ID"
-                className="w-full rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-gray-900 dark:text-gray-100"
-              />
-              <label className="text-xs font-semibold text-gray-500 dark:text-gray-400">
-                Quantity
-              </label>
-              <input
-                type="number"
-                min="1"
-                value={qrQuantity}
-                onChange={(event) => setQrQuantity(event.target.value)}
-                placeholder="Number of QRs"
-                className="w-full rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-gray-900 dark:text-gray-100"
-              />
+              <div className="space-y-2">
+                <label className="text-xs font-semibold text-gray-500 dark:text-gray-400">
+                  Password
+                </label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  placeholder="Enter password"
+                  className="w-full rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-gray-900 dark:text-gray-100"
+                />
+              </div>
               <button
                 type="button"
-                onClick={handleOrderQrs}
-                disabled={isOrdering}
+                onClick={handleSignIn}
+                disabled={isSigningIn}
                 className="w-full rounded-xl bg-primary text-white text-sm font-semibold py-2 shadow-md disabled:opacity-60"
               >
-                {isOrdering ? "Generating..." : "Generate QRs"}
+                {isSigningIn ? "Signing in..." : "Sign in"}
               </button>
+              {authStatus && (
+                <div className="text-xs text-green-600 font-semibold">{authStatus}</div>
+              )}
+              {authError && <div className="text-xs text-red-600 font-semibold">{authError}</div>}
             </div>
-            {qrOrderStatus && (
-              <div className="text-xs text-green-600 font-semibold">{qrOrderStatus}</div>
-            )}
-            {qrOrderError && <div className="text-xs text-red-600 font-semibold">{qrOrderError}</div>}
-            {lastOrderHashes.length > 0 && (
-              <div className="rounded-xl border border-gray-100 dark:border-zinc-800 p-3 space-y-2">
-                <div className="text-xs font-semibold text-gray-700 dark:text-gray-300">
-                  Latest QR hashes
-                </div>
-                {lastOrderHashes.map((hash) => (
-                  <div key={hash} className="flex items-center justify-between gap-2">
-                    <div className="text-[10px] text-gray-500 dark:text-gray-400 break-all">
-                      {hash}
+          )}
+
+          {isAuthenticated && (
+            <>
+              {/* Main Dashboard Layout */}
+              <div className="mx-auto w-full max-w-[1920px] px-4 py-6">
+                <div className="flex flex-col lg:flex-row gap-6">
+                  {/* Sidebar Navigation */}
+                  <aside className="lg:w-64 flex-shrink-0 bg-white dark:bg-[#1a1a1a] rounded-xl border border-gray-100 dark:border-gray-800 p-4 shadow-xl h-fit sticky top-6 max-h-[calc(100vh-3rem)] overflow-y-auto scrollbar-none">
+                    <div className="space-y-6">
+                      {/* Profile Section */}
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-3 pb-3 border-b border-gray-100 dark:border-gray-800">
+                          <div className="h-10 w-10 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-sm">
+                            {(vendorInfo?.name || "V")[0].toUpperCase()}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-semibold text-gray-900 dark:text-white truncate">
+                              {vendorInfo?.name || "Vendor"}
+                            </div>
+                            <div className="text-xs text-gray-400 truncate">
+                              {vendorInfo?.email || ""}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Stats Quick View */}
+                      {/* Stats Quick View */}
+                      <div className="grid grid-cols-2 gap-2">
+                        <StarBorder as="div" className="w-full" color="#81cc2a" speed="5s" innerClassName="bg-white dark:bg-[#000] shadow-sm dark:shadow-none">
+                          <div className="flex flex-col items-center justify-center w-full">
+                            <div className="text-[10px] text-gray-500 mb-0.5">Wallet</div>
+                            <div
+                              className="text-sm font-bold text-[#81cc2a] truncate max-w-full"
+                              title={`₹${formatAmount(walletBalance)}`}
+                            >
+                              ₹{formatCompactAmount(walletBalance)}
+                            </div>
+                          </div>
+                        </StarBorder>
+                        <StarBorder as="div" className="w-full" color="#81cc2a" speed="5s" innerClassName="bg-white dark:bg-[#000] shadow-sm dark:shadow-none">
+                          <div className="flex flex-col items-center justify-center w-full">
+                            <div className="text-[10px] text-gray-500 mb-0.5">Active QRs</div>
+                            <div className="text-sm font-bold text-[#81cc2a]">₹{qrStats.active}</div>
+                          </div>
+                        </StarBorder>
+                      </div>
+
+                      {/* Navigation */}
+                      {/* Navigation */}
+                      <nav className="space-y-2">
+                        {[
+                          { id: 'overview', label: 'Overview', icon: Store },
+                          { id: 'brand', label: 'Brand', icon: ShieldCheck },
+                          { id: 'campaigns', label: 'Campaigns', icon: BadgeCheck },
+                          { id: 'products', label: 'Products', icon: Package },
+                          { id: 'wallet', label: 'Wallet', icon: Wallet },
+                          { id: 'scan', label: 'Scan & Redeem', icon: ScanLine },
+                        ].map((item) => {
+                          const isActive = activeTab === item.id;
+                          if (isActive) {
+                            return (
+                              <StarBorder
+                                key={item.id}
+                                as="button"
+                                onClick={() => navigate(`/vendor/${item.id}`)}
+                                color="#81cc2a" // Lime Green
+                                speed="4s"
+                                className="w-full cursor-pointer"
+                                innerClassName="bg-white dark:bg-[#000] pointer-events-none text-gray-900 dark:text-white"
+                              >
+                                <item.icon size={18} className="text-[#81cc2a]" />
+                                <span className="font-semibold text-gray-900 dark:text-white">{item.label}</span>
+                              </StarBorder>
+                            );
+                          }
+                          return (
+                            <button
+                              key={item.id}
+                              onClick={() => navigate(`/vendor/${item.id}`)}
+                              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-[#252525] dark:hover:text-gray-200 transition-all font-medium"
+                            >
+                              <item.icon size={18} />
+                              <span>{item.label}</span>
+                            </button>
+                          );
+                        })}
+                      </nav>
+
+                      {/* Sign Out */}
+                      <button
+                        onClick={handleSignOut}
+                        className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg hover:bg-red-900/20 text-red-400 text-sm font-medium border border-red-900/30"
+                      >
+                        <LogOut size={18} />
+                        <span>Sign Out</span>
+                      </button>
                     </div>
-                    <div className="flex items-center gap-2">
+                  </aside>
+
+                  {/* Main Content */}
+                  <main className="flex-1 min-w-0 space-y-4 overflow-x-hidden">
+                    {/* Top Greeting Header */}
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Good morning, {vendorInfo?.name || "Vendor"}!</h1>
+                        <p className="text-sm text-gray-400 mt-1">Here's what's happening with your store today</p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="relative">
+                          <input
+                            type="search"
+                            placeholder="Search..."
+                            className="w-64 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#0f0f0f] px-4 py-2 pl-10 text-sm text-gray-900 dark:text-white placeholder-gray-500"
+                          />
+                          <svg className="absolute left-3 top-2.5 h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                          </svg>
+                        </div>
+                        <ModeToggle />
+                      </div>
+                    </div>
+
+                    {/* Stats Row */}
+                    {activeTab === 'overview' && (
+                      <div className="space-y-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                          {/* Wallet Balance Card */}
+                          <div className="bg-white dark:bg-[#1a1a1a] rounded-xl border border-gray-100 dark:border-gray-800 p-5 overflow-hidden shadow-sm dark:shadow-none">
+                            <div className="flex justify-between items-start mb-2">
+                              <div className="overflow-hidden">
+                                <div className="text-2xl xl:text-3xl font-bold text-gray-900 dark:text-white mb-1 truncate" title={`₹${formatAmount(walletBalance)}`}>
+                                  ₹{formatCompactAmount(walletBalance)}
+                                </div>
+                                <div className="text-xs text-gray-500">Wallet Balance</div>
+                              </div>
+                              <div className="h-10 w-10 xl:h-12 xl:w-12 rounded-lg bg-cyan-600/10 flex items-center justify-center flex-shrink-0 ml-2">
+                                <Wallet className="h-5 w-5 xl:h-6 xl:w-6 text-cyan-400" />
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1 text-xs">
+                              <span className="text-emerald-400">+5.9%</span>
+                              <span className="text-gray-500">vs last month</span>
+                            </div>
+                          </div>
+
+                          <div className="bg-white dark:bg-[#1a1a1a] rounded-xl border border-gray-100 dark:border-gray-800 p-5 overflow-hidden shadow-sm dark:shadow-none">
+                            <div className="flex justify-between items-start mb-2">
+                              <div className="overflow-hidden">
+                                <div className="text-2xl xl:text-3xl font-bold text-gray-900 dark:text-white mb-1 truncate">
+                                  {campaigns.length}
+                                </div>
+                                <div className="text-xs text-gray-500">Total Campaigns</div>
+                              </div>
+                              <div className="h-10 w-10 xl:h-12 xl:w-12 rounded-lg bg-purple-600/10 flex items-center justify-center flex-shrink-0 ml-2">
+                                <BadgeCheck className="h-5 w-5 xl:h-6 xl:w-6 text-purple-400" />
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1 text-xs">
+                              <span className="text-emerald-400">+10.9%</span>
+                              <span className="text-gray-500">vs last month</span>
+                            </div>
+                          </div>
+
+                          <div className="bg-white dark:bg-[#1a1a1a] rounded-xl border border-gray-100 dark:border-gray-800 p-5 overflow-hidden shadow-sm dark:shadow-none">
+                            <div className="flex justify-between items-start mb-2">
+                              <div className="overflow-hidden">
+                                <div className="text-2xl xl:text-3xl font-bold text-gray-900 dark:text-white mb-1 truncate">
+                                  {qrStats.total}
+                                </div>
+                                <div className="text-xs text-gray-500">Total QR Codes</div>
+                              </div>
+                              <div className="h-10 w-10 xl:h-12 xl:w-12 rounded-lg bg-emerald-600/10 flex items-center justify-center flex-shrink-0 ml-2">
+                                <QrCode className="h-5 w-5 xl:h-6 xl:w-6 text-emerald-400" />
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1 text-xs">
+                              <span className="text-red-400">-3.9%</span>
+                              <span className="text-gray-500">vs last month</span>
+                            </div>
+                          </div>
+
+                          <div className="bg-white dark:bg-[#1a1a1a] rounded-xl border border-gray-100 dark:border-gray-800 p-5 overflow-hidden shadow-sm dark:shadow-none">
+                            <div className="flex justify-between items-start mb-2">
+                              <div className="overflow-hidden">
+                                <div className="text-2xl xl:text-3xl font-bold text-gray-900 dark:text-white mb-1 truncate">
+                                  {qrStats.redeemed}
+                                </div>
+                                <div className="text-xs text-gray-500">QRs Redeemed</div>
+                              </div>
+                              <div className="h-10 w-10 xl:h-12 xl:w-12 rounded-lg bg-pink-600/10 flex items-center justify-center flex-shrink-0 ml-2">
+                                <Store className="h-5 w-5 xl:h-6 xl:w-6 text-pink-400" />
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1 text-xs">
+                              <span className="text-emerald-400">+5.9%</span>
+                              <span className="text-gray-500">vs last month</span>
+                            </div>
+                          </div>
+                        </div>
+
+
+                        {/* Analytics Graphs */}
+                        <VendorAnalytics />
+
+                        <div className="bg-white dark:bg-[#1a1a1a] rounded-xl border border-gray-100 dark:border-gray-800 p-5 overflow-hidden shadow-sm dark:shadow-none">
+                          <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+                            <div className="flex items-center gap-2">
+                              <div className="h-8 w-8 rounded-full bg-emerald-600/20 flex items-center justify-center">
+                                <QrCode size={16} className="text-emerald-400" />
+                              </div>
+                              <div>
+                                <div className="text-base font-bold text-gray-900 dark:text-white">Campaign QR status</div>
+                                <div className="text-xs text-gray-500">
+                                  Review QR usage by campaign.
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 text-xs text-gray-400">
+                              <span className="text-gray-500">Campaign</span>
+                              <select
+                                value={overviewCampaignId}
+                                onChange={(event) => setOverviewCampaignId(event.target.value)}
+                                className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#0f0f0f] px-3 py-1.5 text-xs text-gray-900 dark:text-white"
+                              >
+                                {overviewCampaignOptions.map((option) => (
+                                  <option key={option.id} value={option.id}>
+                                    {option.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3">
+                            {[
+                              { key: "total", label: "Total" },
+                              { key: "generated", label: "Generated" },
+                              { key: "assigned", label: "Assigned" },
+                              { key: "active", label: "Active" },
+                              { key: "redeemed", label: "Redeemed" },
+                              { key: "expired", label: "Expired" },
+                              { key: "blocked", label: "Blocked" },
+                            ].map((item) => {
+                              const value = overviewQrStatusCounts[item.key] ?? 0;
+                              const tone =
+                                item.key === "total"
+                                  ? "text-gray-900 dark:text-white"
+                                  : getStatusClasses(item.key);
+                              return (
+                                <div
+                                  key={item.key}
+                                  className="rounded-lg border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-[#0f0f0f] p-3"
+                                >
+                                  <div className="text-xs text-gray-500">{item.label}</div>
+                                  <div className={`mt-1 text-lg font-bold ${tone}`}>{value}</div>
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          <div className="mt-3 flex items-center justify-between text-[11px] text-gray-500">
+                            <span>
+                              {overviewFilteredQrs.length} QR
+                              {overviewFilteredQrs.length !== 1 ? "s" : ""} tracked
+                            </span>
+                            {overviewQrStatusCounts.unknown > 0 && (
+                              <span>{overviewQrStatusCounts.unknown} with unknown status</span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div id="overview" className="bg-white dark:bg-[#1a1a1a] rounded-xl border border-gray-100 dark:border-gray-800 p-5 shadow-sm dark:shadow-none">
+                          <div className="flex items-center justify-between mb-4">
+                            <div className="flex items-center gap-2">
+                              <div className="h-8 w-8 rounded-full bg-blue-600/20 flex items-center justify-center">
+                                <Store size={16} className="text-blue-400" />
+                              </div>
+                              <h3 className="text-base font-bold text-gray-900 dark:text-white">Recent Redemptions</h3>
+                            </div>
+                            <button
+                              onClick={() => navigate('/vendor/scan')}
+                              className="text-xs text-blue-400 hover:text-blue-300 font-medium"
+                            >
+                              Scan New
+                            </button>
+                          </div>
+
+                          {qrs.filter(q => q.status === 'redeemed' || q.status === 'claimed').length === 0 ? (
+                            <div className="text-center py-8 text-gray-500 text-sm">
+                              No redemptions yet. Share your QR codes to get started!
+                            </div>
+                          ) : (
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-left text-sm text-gray-400">
+                                <thead className="text-xs uppercase bg-gray-100 dark:bg-[#252525] text-gray-500 dark:text-gray-300">
+                                  <tr>
+                                    <th className="px-4 py-3 rounded-l-lg">Time</th>
+                                    <th className="px-4 py-3">Campaign</th>
+                                    <th className="px-4 py-3">Amount</th>
+                                    <th className="px-4 py-3 rounded-r-lg text-right">Hash</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-800">
+                                  {qrs
+                                    .filter(q => q.status === 'redeemed' || q.status === 'claimed')
+                                    .sort((a, b) => new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt))
+                                    .slice(0, 10)
+                                    .map((qr) => (
+                                      <tr key={qr.id} className="hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
+                                        <td className="px-4 py-3">
+                                          <div className="font-medium text-gray-900 dark:text-white">Today</div>
+                                          <div className="text-[10px] text-gray-500">
+                                            {format(new Date(), 'h:mm a')}
+                                            {/* Using current time as placeholder since API might not return update time yet */}
+                                          </div>
+                                        </td>
+                                        <td className="px-4 py-3">
+                                          <div className="truncate max-w-[150px] text-gray-900 dark:text-white">
+                                            {qr.Campaign?.title || "Unknown Campaign"}
+                                          </div>
+                                        </td>
+                                        <td className="px-4 py-3 font-bold text-emerald-400">
+                                          ₹{formatAmount(getGeneratedPrice(qr))}
+                                        </td>
+                                        <td className="px-4 py-3 text-right font-mono text-xs text-gray-500">
+                                          {qr.uniqueHash.substring(0, 8)}...
+                                        </td>
+                                      </tr>
+                                    ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {activeTab === 'brand' && (
+                      <div className="bg-white dark:bg-[#1a1a1a] rounded-xl border border-gray-100 dark:border-gray-800 p-5 shadow-sm dark:shadow-none" id="brand">
+                        <div className="flex items-center gap-2 text-base font-bold text-gray-900 dark:text-white mb-1">
+                          <Store size={18} className="text-emerald-400" />
+                          Brand details
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          Brand access and subscription are managed by the admin.
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-[10px] font-medium text-gray-500 block mb-1">
+                              Company name
+                            </label>
+                            <input
+                              type="text"
+                              value={companyProfile.businessName}
+                              onChange={handleCompanyChange("businessName")}
+                              placeholder="Legal company name"
+                              className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#0f0f0f] px-3 py-1.5 text-xs text-gray-900 dark:text-white placeholder-gray-500"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs font-semibold text-gray-500 dark:text-gray-400">
+                              Brand name
+                            </label>
+                            <input
+                              type="text"
+                              value={brandProfile.name}
+                              readOnly
+                              disabled
+                              placeholder="Brand display name"
+                              className="w-full rounded-xl border border-gray-200 dark:border-zinc-800 bg-white/80 dark:bg-zinc-900/80 px-3 py-2 text-sm text-gray-600 dark:text-gray-300 cursor-not-allowed"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs font-semibold text-gray-500 dark:text-gray-400">
+                              Logo URL
+                            </label>
+                            <input
+                              type="text"
+                              value={brandProfile.logoUrl}
+                              readOnly
+                              disabled
+                              placeholder="https://..."
+                              className="w-full rounded-xl border border-gray-200 dark:border-zinc-800 bg-white/80 dark:bg-zinc-900/80 px-3 py-2 text-sm text-gray-600 dark:text-gray-300 cursor-not-allowed"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs font-semibold text-gray-500 dark:text-gray-400">
+                              Website
+                            </label>
+                            <input
+                              type="text"
+                              value={brandProfile.website}
+                              readOnly
+                              disabled
+                              placeholder="https://brand.com"
+                              className="w-full rounded-xl border border-gray-200 dark:border-zinc-800 bg-white/80 dark:bg-zinc-900/80 px-3 py-2 text-sm text-gray-600 dark:text-gray-300 cursor-not-allowed"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs font-semibold text-gray-500 dark:text-gray-400">
+                              Contact phone
+                            </label>
+                            <input
+                              type="tel"
+                              value={companyProfile.contactPhone}
+                              onChange={handleCompanyChange("contactPhone")}
+                              placeholder="Primary contact"
+                              className="w-full rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-gray-900 dark:text-gray-100"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs font-semibold text-gray-500 dark:text-gray-400">
+                              GSTIN
+                            </label>
+                            <input
+                              type="text"
+                              value={companyProfile.gstin}
+                              onChange={handleCompanyChange("gstin")}
+                              placeholder="GSTIN"
+                              className="w-full rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-gray-900 dark:text-gray-100"
+                            />
+                          </div>
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-xs font-semibold text-gray-500 dark:text-gray-400">
+                            Registered address
+                          </label>
+                          <textarea
+                            rows="3"
+                            value={companyProfile.address}
+                            onChange={handleCompanyChange("address")}
+                            placeholder="Full registered address"
+                            className="w-full rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-gray-900 dark:text-gray-100"
+                          />
+                        </div>
+                        <div className="flex flex-wrap gap-2 rounded-xl border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-[#111] p-3">
+                          <span
+                            className={`px-3 py-1 rounded-full text-[10px] font-semibold ${subscriptionBadgeClass}`}
+                          >
+                            {subscriptionStatusLabel}
+                          </span>
+                          <span className="px-3 py-1 rounded-full bg-gray-200 dark:bg-white/5 text-[10px] text-gray-600 dark:text-gray-400">
+                            Plan: {subscriptionPlanLabel}
+                          </span>
+                          <span className="px-3 py-1 rounded-full bg-gray-200 dark:bg-white/5 text-[10px] text-gray-600 dark:text-gray-400">
+                            Start: {subscriptionStartsAt}
+                          </span>
+                          <span className="px-3 py-1 rounded-full bg-gray-200 dark:bg-white/5 text-[10px] text-gray-600 dark:text-gray-400">
+                            Ends: {subscriptionEndsAt}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleRegistrationSave}
+                          disabled={isSavingRegistration}
+                          className="w-full rounded-xl bg-primary text-white text-sm font-semibold py-2 shadow-md disabled:opacity-60"
+                        >
+                          {isSavingRegistration ? "Saving..." : "Save company profile"}
+                        </button>
+                        {registrationStatus && (
+                          <div className="text-xs text-green-600 font-semibold">{registrationStatus}</div>
+                        )}
+                        {registrationError && (
+                          <div className="text-xs text-red-600 font-semibold">{registrationError}</div>
+                        )}
+                      </div>
+                    )}
+
+
+                    {activeTab === 'campaigns' && (
+                      <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-100 dark:border-zinc-800 p-4 shadow-sm space-y-4" id="campaigns">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2 text-sm font-semibold text-gray-800 dark:text-gray-200">
+                            <BadgeCheck size={16} className="text-primary-strong" />
+                            Campaigns
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => loadCampaigns()}
+                            className="flex items-center gap-1 text-xs font-semibold text-gray-500 dark:text-gray-400"
+                          >
+                            <RefreshCw size={12} />
+                            Refresh
+                          </button>
+                        </div>
+
+                        {/* Campaign Sub-tabs */}
+                        <div className="flex border-b border-gray-200 dark:border-zinc-800">
+                          <button
+                            onClick={() => setCampaignTab('create')}
+                            className={`px-4 py-2 text-sm font-semibold transition-colors ${campaignTab === 'create'
+                              ? 'border-b-2 border-primary text-primary'
+                              : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+                              }`}
+                          >
+                            Create Campaign
+                          </button>
+                          <button
+                            onClick={() => setCampaignTab('active')}
+                            className={`px-4 py-2 text-sm font-semibold transition-colors ${campaignTab === 'active'
+                              ? 'border-b-2 border-primary text-primary'
+                              : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+                              }`}
+                          >
+                            Active Campaigns ({campaigns.filter(c => c.status === 'active').length})
+                          </button>
+                          <button
+                            onClick={() => setCampaignTab('pending')}
+                            className={`px-4 py-2 text-sm font-semibold transition-colors ${campaignTab === 'pending'
+                              ? 'border-b-2 border-primary text-primary'
+                              : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+                              }`}
+                          >
+                            Pending Campaigns ({campaigns.filter(c => c.status === 'pending').length})
+                          </button>
+                        </div>
+                        {/* Create Campaign Tab */}
+                        {campaignTab === 'create' && (
+                          <div className="space-y-3">
+                            <div className="space-y-2">
+                              <label className="text-xs font-semibold text-gray-500 dark:text-gray-400">
+                                Campaign title
+                              </label>
+                              <input
+                                type="text"
+                                value={campaignForm.title}
+                                onChange={handleCampaignChange("title")}
+                                placeholder="e.g. Diwali Cashback"
+                                className="w-full rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-gray-900 dark:text-gray-100"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <label className="text-xs font-semibold text-gray-500 dark:text-gray-400">
+                                Product
+                              </label>
+                              <select
+                                value={campaignForm.productId}
+                                onChange={handleCampaignChange("productId")}
+                                className="w-full rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-gray-900 dark:text-gray-100"
+                              >
+                                <option value="">Select Product...</option>
+                                {products.map(p => (
+                                  <option key={p.id} value={p.id}>{p.name}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="space-y-2">
+                              <textarea
+                                rows="2"
+                                value={campaignForm.description}
+                                onChange={handleCampaignChange("description")}
+                                placeholder="Short campaign summary"
+                                className="w-full rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-gray-900 dark:text-gray-100"
+                              />
+                            </div>
+                            <div className="space-y-3">
+                              <label className="text-xs font-semibold text-gray-500 dark:text-gray-400">
+                                Allocations
+                              </label>
+                              {campaignRows.map((row, index) => (
+                                <div key={row.id} className="grid grid-cols-12 gap-2 items-end">
+                                  <div className="col-span-3 space-y-1">
+                                    <label className="text-[10px] uppercase tracking-wide text-gray-400">Cashback</label>
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      step="0.01"
+                                      value={row.cashbackAmount}
+                                      onChange={(e) => handleCampaignRowChange(row.id, "cashbackAmount", e.target.value)}
+                                      placeholder="Amt"
+                                      className="w-full rounded-lg border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-2 py-1.5 text-sm text-gray-900 dark:text-gray-100"
+                                    />
+                                  </div>
+                                  <div className="col-span-4 space-y-1">
+                                    <label className="text-[10px] uppercase tracking-wide text-gray-400">Quantity</label>
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      value={row.quantity}
+                                      onChange={(e) => handleCampaignRowChange(row.id, "quantity", e.target.value)}
+                                      placeholder="Qty"
+                                      className="w-full rounded-lg border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-2 py-1.5 text-sm text-gray-900 dark:text-gray-100"
+                                    />
+                                  </div>
+                                  <div className="col-span-4 space-y-1">
+                                    <label className="text-[10px] uppercase tracking-wide text-gray-400">Total (₹)</label>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="0.01"
+                                      value={row.totalBudget}
+                                      onChange={(e) => handleCampaignRowChange(row.id, "totalBudget", e.target.value)}
+                                      placeholder="Total"
+                                      className="w-full rounded-lg border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-2 py-1.5 text-sm text-gray-900 dark:text-gray-100"
+                                    />
+                                  </div>
+                                  <div className="col-span-1 pb-1.5 flex justify-end">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveCampaignRow(row.id)}
+                                      className="p-2 text-gray-400 hover:text-red-500 transition-colors"
+                                      aria-label="Remove row"
+                                    >
+                                      <Trash2 size={16} />
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                              <button
+                                type="button"
+                                onClick={handleAddCampaignRow}
+                                className="text-xs font-semibold text-primary hover:text-primary-strong flex items-center gap-1"
+                              >
+                                <Plus size={14} />
+                                Add another allocation
+                              </button>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3">
+                              <div className="space-y-2">
+                                <label className="text-xs font-semibold text-gray-500 dark:text-gray-400">
+                                  Start date
+                                </label>
+                                <div className="relative">
+                                  <input
+                                    ref={campaignStartDateRef}
+                                    type="date"
+                                    value={campaignForm.startDate}
+                                    onChange={handleCampaignChange("startDate")}
+                                    className="w-full appearance-none rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 pr-10 text-sm text-gray-900 dark:text-gray-100"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => openDatePicker(campaignStartDateRef)}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                                    aria-label="Open start date calendar"
+                                  >
+                                    <Calendar size={16} />
+                                  </button>
+                                </div>
+                              </div>
+                              <div className="space-y-2">
+                                <label className="text-xs font-semibold text-gray-500 dark:text-gray-400">
+                                  End date
+                                </label>
+                                <div className="relative">
+                                  <input
+                                    ref={campaignEndDateRef}
+                                    type="date"
+                                    value={campaignForm.endDate}
+                                    onChange={handleCampaignChange("endDate")}
+                                    className="w-full appearance-none rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 pr-10 text-sm text-gray-900 dark:text-gray-100"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => openDatePicker(campaignEndDateRef)}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                                    aria-label="Open end date calendar"
+                                  >
+                                    <Calendar size={16} />
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={handleCreateCampaign}
+                              disabled={isSavingCampaign}
+                              className="w-full rounded-xl bg-gray-900 text-white text-sm font-semibold py-2 shadow-md disabled:opacity-60 dark:bg-white dark:text-gray-900"
+                            >
+                              {isSavingCampaign ? "Creating..." : "Create campaign"}
+                            </button>
+                            {campaignStatus && (
+                              <div className="text-xs text-green-600 font-semibold">{campaignStatus}</div>
+                            )}
+                            {campaignError && (
+                              <div className="text-xs text-red-600 font-semibold">{campaignError}</div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Active Campaigns Tab */}
+                        {campaignTab === 'active' && (
+                          <div className="space-y-4">
+                            {/* Generate QRs Section */}
+                            <div className="rounded-xl border border-gray-100 dark:border-zinc-800 p-4 space-y-3">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2 text-sm font-semibold text-gray-800 dark:text-gray-200">
+                                  <QrCode size={16} className="text-primary-strong" />
+                                  Generate QRs
+                                </div>
+                                <div className="text-[10px] text-gray-500 dark:text-gray-400">
+                                  Select a campaign and product to generate QR codes.
+                                </div>
+                              </div>
+                              <div className="grid gap-3 md:grid-cols-2">
+                                <div className="space-y-2">
+                                  <label className="text-xs font-semibold text-gray-500 dark:text-gray-400">
+                                    Campaign
+                                  </label>
+                                  <select
+                                    value={selectedQrCampaign}
+                                    onChange={(event) => setSelectedQrCampaign(event.target.value)}
+                                    className="w-full rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-gray-900 dark:text-gray-100"
+                                  >
+                                    <option value="">Select campaign</option>
+                                    {campaigns.filter((campaign) => campaign.status === "active").map((campaign) => (
+                                      <option key={campaign.id} value={campaign.id}>
+                                        {campaign.title}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                                <div className="space-y-2">
+                                  <label className="text-xs font-semibold text-gray-500 dark:text-gray-400">
+                                    Product
+                                  </label>
+                                  <select
+                                    value={selectedQrProduct}
+                                    onChange={(event) => setSelectedQrProduct(event.target.value)}
+                                    className="w-full rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-gray-900 dark:text-gray-100"
+                                  >
+                                    <option value="">Select product</option>
+                                    {products.map((product) => (
+                                      <option key={product.id} value={product.id}>
+                                        {product.name}{product.variant ? ` - ${product.variant}` : ''}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                              </div>
+                              <div className="flex justify-end">
+                                <button
+                                  type="button"
+                                  onClick={handleOrderQrs}
+                                  disabled={!selectedQrCampaign || !selectedQrProduct || isOrdering}
+                                  className="rounded-xl bg-emerald-600 text-white text-sm font-semibold px-5 py-2.5 shadow-lg hover:bg-emerald-700 disabled:opacity-60"
+                                >
+                                  {isOrdering ? "Generating..." : "Generate QRs"}
+                                </button>
+                              </div>
+                              {qrOrderStatus && (
+                                <div className="text-xs text-green-600 font-semibold">{qrOrderStatus}</div>
+                              )}
+                              {qrOrderError && (
+                                <div className="text-xs text-red-600 font-semibold">{qrOrderError}</div>
+                              )}
+                              {lastBatchSummary && (
+                                <div className="rounded-xl border border-emerald-600/30 bg-emerald-50 dark:bg-emerald-900/20 p-4 space-y-3">
+                                  <div className="flex items-center justify-between">
+                                    <div className="text-sm font-bold text-emerald-400">Order Invoice</div>
+                                    <div className="text-xs text-gray-400">{format(new Date(lastBatchSummary.timestamp), "PPP p")}</div>
+                                  </div>
+                                  <div className="grid gap-3 sm:grid-cols-3">
+                                    <div>
+                                      <div className="text-[10px] uppercase tracking-wide text-gray-500">Campaign</div>
+                                      <div className="text-sm font-semibold text-gray-900 dark:text-white">{lastBatchSummary.campaignTitle}</div>
+                                    </div>
+                                    <div>
+                                      <div className="text-[10px] uppercase tracking-wide text-gray-500">Quantity</div>
+                                      <div className="text-sm font-semibold text-gray-900 dark:text-white">{lastBatchSummary.totalQrs || 0} QRs</div>
+                                    </div>
+                                    <div>
+                                      <div className="text-[10px] uppercase tracking-wide text-gray-500">Print Cost (₹1 × {lastBatchSummary.totalQrs})</div>
+                                      <div className="text-lg font-bold text-cyan-400">₹{lastBatchSummary.totalQrs || 0}</div>
+                                    </div>
+                                  </div>
+                                  <div className="border-t border-emerald-600/30 pt-3 flex items-center justify-between gap-3">
+                                    <div className="text-xs text-gray-400">
+                                      Admin will ship the QR codes to you after payment confirmation.
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const printCost = lastBatchSummary.totalQrs || 0;
+                                          const invoiceData = {
+                                            id: lastBatchSummary.id,
+                                            date: lastBatchSummary.timestamp,
+                                            campaign: lastBatchSummary.campaignTitle,
+                                            quantity: lastBatchSummary.totalQrs,
+                                            printCost: printCost,
+                                          };
+                                          const invoiceText = `
+INVOICE #${invoiceData.id}
+Date: ${format(new Date(invoiceData.date), "PPP p")}
+----------------------------------------
+Campaign: ${invoiceData.campaign}
+Quantity: ${invoiceData.quantity} QRs
+Print Cost: ₹${invoiceData.printCost}
+----------------------------------------
+Total Amount: ₹${invoiceData.printCost}
+                                      `.trim();
+                                          const blob = new Blob([invoiceText], { type: 'text/plain' });
+                                          const url = URL.createObjectURL(blob);
+                                          const a = document.createElement('a');
+                                          a.href = url;
+                                          a.download = `invoice-${invoiceData.id}.txt`;
+                                          a.click();
+                                          URL.revokeObjectURL(url);
+                                        }}
+                                        className="text-xs font-semibold text-emerald-400 hover:text-emerald-300 px-3 py-1.5 rounded-lg border border-emerald-600/30 hover:bg-emerald-600/10"
+                                      >
+                                        Download Invoice
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={async () => {
+                                          const printCost = lastBatchSummary.totalQrs || 0;
+                                          if (walletBalance < printCost) {
+                                            setQrOrderError(`Insufficient balance. Need ₹${printCost}, have ₹${walletBalance.toFixed(2)}`);
+                                            return;
+                                          }
+                                          setQrOrderStatus("Processing payment...");
+                                          try {
+                                            // Deduct print cost from wallet
+                                            // Note: This would need a backend API to process payment
+                                            setQrOrderStatus(`Payment of ₹${printCost} confirmed! Admin notified.`);
+                                            setLastBatchSummary(null); // Clear invoice after payment
+                                            await loadWallet();
+                                          } catch (err) {
+                                            setQrOrderError(err.message || "Payment failed");
+                                          }
+                                        }}
+                                        className="text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 px-4 py-1.5 rounded-lg shadow-lg"
+                                      >
+                                        Pay ₹{lastBatchSummary.totalQrs || 0}
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="space-y-2">
+                              {campaigns.filter(c => c.status === 'active').length === 0 ? (
+                                <div className="text-xs text-center text-gray-500 py-4">No active campaigns found.</div>
+                              ) : (
+                                campaigns.filter(c => c.status === 'active').map((campaign) => (
+                                  <div
+                                    key={campaign.id}
+                                    className="flex items-center justify-between rounded-xl border border-gray-100 dark:border-zinc-800 px-3 py-2"
+                                  >
+                                    <div>
+                                      <div className="text-xs font-semibold text-gray-700 dark:text-gray-300">
+                                        {campaign.title}
+                                      </div>
+                                      <div className="text-[10px] text-gray-500 dark:text-gray-400">
+                                        INR {formatAmount(campaign.cashbackAmount)} - {campaign.status}
+                                      </div>
+                                    </div>
+                                    <div className="flex flex-col items-end gap-1">
+                                      <div className="text-[10px] text-gray-500 dark:text-gray-400">
+                                        {campaign.id.slice(0, 10)}...
+                                      </div>
+                                      <div className="flex items-center gap-2 text-[10px] font-semibold">
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setCampaignId(campaign.id);
+                                            setSelectedQrCampaign(campaign.id);
+                                          }}
+                                          className="text-primary-strong dark:text-primary"
+                                        >
+                                          Use
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleCopyCampaignId(campaign.id)}
+                                          className="text-gray-600 dark:text-gray-300"
+                                        >
+                                          Copy ID
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleDeleteCampaign(campaign.id)}
+                                          disabled={deletingCampaignId === campaign.id}
+                                          className="text-rose-500 hover:text-rose-400 disabled:opacity-60"
+                                        >
+                                          {deletingCampaignId === campaign.id ? "Deleting..." : "Delete"}
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Pending Campaigns Tab */}
+                        {campaignTab === 'pending' && (
+                          <div className="space-y-2">
+                            {campaigns.filter(c => c.status === 'pending').length === 0 ? (
+                              <div className="text-xs text-center text-gray-500 py-4">No pending campaigns found.</div>
+                            ) : (
+                              campaigns.filter(c => c.status === 'pending').map((campaign) => (
+                                <div
+                                  key={campaign.id}
+                                  onClick={() => setSelectedPendingCampaign(campaign)}
+                                  className="flex items-center justify-between rounded-xl border border-gray-100 dark:border-zinc-800 px-3 py-2 cursor-pointer hover:border-primary/50 transition-colors"
+                                >
+                                  <div>
+                                    <div className="text-xs font-semibold text-gray-700 dark:text-gray-300">
+                                      {campaign.title}
+                                    </div>
+                                    <div className="text-[10px] text-gray-500 dark:text-gray-400">
+                                      INR {formatAmount(campaign.cashbackAmount)} - {campaign.status}
+                                    </div>
+                                  </div>
+                                  <div className="flex flex-col items-end gap-1">
+                                    <div className="text-[10px] text-gray-500 dark:text-gray-400">
+                                      {campaign.id.slice(0, 10)}...
+                                    </div>
+                                    <div className="flex items-center gap-2 text-[10px] font-semibold">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleCopyCampaignId(campaign.id)}
+                                        className="text-gray-600 dark:text-gray-300"
+                                      >
+                                        Copy ID
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteCampaign(campaign.id)}
+                                        disabled={deletingCampaignId === campaign.id}
+                                        className="text-rose-500 hover:text-rose-400 disabled:opacity-60"
+                                      >
+                                        {deletingCampaignId === campaign.id ? "Deleting..." : "Delete"}
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        )}
+
+
+
+                        {/* Pending Campaign Details Modal */}
+                        {selectedPendingCampaign && (
+                          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+                            <div className="bg-white dark:bg-zinc-900 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl border border-gray-100 dark:border-zinc-800">
+                              <div className="p-6 space-y-6">
+                                <div className="flex items-center justify-between">
+                                  <div>
+                                    <h3 className="text-xl font-bold text-gray-900 dark:text-white">{selectedPendingCampaign.title}</h3>
+                                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                                      {format(new Date(selectedPendingCampaign.startDate), 'MMM dd')} - {format(new Date(selectedPendingCampaign.endDate), 'MMM dd, yyyy')}
+                                    </p>
+                                  </div>
+                                  <button onClick={() => setSelectedPendingCampaign(null)} className="p-2 hover:bg-gray-100 dark:hover:bg-zinc-800 rounded-full transition-colors">
+                                    <X size={20} className="text-gray-500" />
+                                  </button>
+                                </div>
+
+                                {selectedPendingCampaign.description && (
+                                  <div className="text-sm text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-zinc-800/50 p-3 rounded-xl border border-gray-100 dark:border-zinc-800">
+                                    {selectedPendingCampaign.description}
+                                  </div>
+                                )}
+
+                                <div>
+                                  <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+                                    <Package size={16} className="text-primary" />
+                                    Allocations Breakdown
+                                  </h4>
+                                  <div className="border border-gray-100 dark:border-zinc-800 rounded-xl overflow-hidden">
+                                    <table className="w-full text-left text-sm">
+                                      <thead className="bg-gray-50 dark:bg-zinc-800/50 text-xs uppercase text-gray-500 font-medium">
+                                        <tr>
+                                          <th className="px-4 py-3">Cashback</th>
+                                          <th className="px-4 py-3 text-center">Qty</th>
+                                          <th className="px-4 py-3 text-right">Budget</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-gray-100 dark:divide-zinc-800">
+                                        {(selectedPendingCampaign.allocations || []).map((alloc, idx) => (
+                                          <tr key={idx} className="bg-white dark:bg-zinc-900">
+                                            <td className="px-4 py-3 text-gray-600 dark:text-gray-300">₹{alloc.cashbackAmount}</td>
+                                            <td className="px-4 py-3 text-center text-gray-600 dark:text-gray-300">{alloc.quantity}</td>
+                                            <td className="px-4 py-3 text-right font-medium text-gray-900 dark:text-white">₹{alloc.totalBudget}</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                      <tfoot className="bg-gray-50 dark:bg-zinc-800/30 font-semibold text-gray-900 dark:text-white">
+                                        <tr>
+                                          <td className="px-4 py-3">Subtotal</td>
+                                          <td className="px-4 py-3 text-center">
+                                            {(selectedPendingCampaign.allocations || []).reduce((sum, a) => sum + (parseInt(a.quantity) || 0), 0)} QRs
+                                          </td>
+                                          <td className="px-4 py-3 text-right">
+                                            ₹{parseFloat(selectedPendingCampaign.subtotal || selectedPendingCampaign.totalBudget || 0).toFixed(2)}
+                                          </td>
+                                        </tr>
+                                        {/* QR Generation Cost Row */}
+                                        <tr>
+                                          <td className="px-4 py-3 text-gray-500 font-normal">
+                                            QR Generation Cost (₹1/QR)
+                                          </td>
+                                          <td className="px-4 py-3 text-center text-gray-500 font-normal">
+                                            -
+                                          </td>
+                                          <td className="px-4 py-3 text-right font-normal text-gray-600 dark:text-gray-400">
+                                            + ₹{(selectedPendingCampaign.allocations || []).reduce((sum, a) => sum + (parseInt(a.quantity) || 0), 0).toFixed(2)}
+                                          </td>
+                                        </tr>
+                                      </tfoot>
+                                    </table>
+                                  </div>
+                                </div>
+
+                                <div className="bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-900/30 rounded-xl p-4 space-y-3">
+                                  <div className="flex items-center justify-between text-sm">
+                                    <span className="text-gray-600 dark:text-gray-400">Wallet Balance</span>
+                                    <span className="font-semibold text-gray-900 dark:text-white">₹{wallet?.balance || "0.00"}</span>
+                                  </div>
+                                  <div className="h-px bg-emerald-200 dark:bg-emerald-800/30"></div>
+                                  <div className="flex items-center justify-between text-base font-bold text-emerald-700 dark:text-emerald-400">
+                                    <span>Total Payable</span>
+                                    <span>
+                                      ₹{(
+                                        parseFloat(selectedPendingCampaign.subtotal || selectedPendingCampaign.totalBudget || 0) +
+                                        ((selectedPendingCampaign.allocations || []).reduce((sum, a) => sum + (parseInt(a.quantity) || 0), 0) * 1)
+                                      ).toFixed(2)}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-3 pt-2">
+                                  <button
+                                    onClick={() => setSelectedPendingCampaign(null)}
+                                    className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 dark:border-zinc-700 text-gray-700 dark:text-gray-300 font-semibold hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors"
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    onClick={() => handlePayCampaign(selectedPendingCampaign)}
+                                    disabled={isPayingCampaign}
+                                    className="flex-1 px-4 py-2.5 rounded-xl bg-black dark:bg-white text-white dark:text-black font-semibold hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center justify-center gap-2"
+                                  >
+                                    {isPayingCampaign ? (
+                                      <>Processing...</>
+                                    ) : (
+                                      <>
+                                        <Wallet size={18} />
+                                        Pay & Activate
+                                      </>
+                                    )}
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="bg-white dark:bg-[#1a1a1a] rounded-xl border border-gray-100 dark:border-gray-800 p-5 shadow-sm dark:shadow-none space-y-4" id="qr-inventory">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2 text-base font-bold text-white">
+                              <ClipboardCheck size={18} className="text-emerald-400" />
+                              QR Orders
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => loadQrs()}
+                              disabled={isLoadingQrs}
+                              className="flex items-center gap-1 text-xs font-semibold text-gray-400 hover:text-white"
+                            >
+                              <RefreshCw size={12} />
+                              Refresh
+                            </button>
+                          </div>
+                          {isLoadingQrs && (
+                            <div className="text-xs text-gray-400">Loading orders...</div>
+                          )}
+                          {qrError && <div className="text-xs text-red-500 font-semibold">{qrError}</div>}
+                          {!isLoadingQrs && qrs.length === 0 && (
+                            <div className="text-xs text-gray-500">No QR orders yet. Generate QRs above.</div>
+                          )}
+
+                          {/* Order Summary by Campaign */}
+                          {qrsGroupedByCampaign.length > 0 && (
+                            <div className="space-y-3">
+                              {qrsGroupedByCampaign.map((campaign) => (
+                                <div key={campaign.id} className="rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+                                  {/* Campaign Header */}
+                                  <div className="bg-gradient-to-r from-emerald-600/30 to-emerald-600/10 px-4 py-3">
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex items-center gap-3">
+                                        <Megaphone size={18} className="text-emerald-400" />
+                                        <div>
+                                          <span className="text-base font-bold text-gray-900 dark:text-white">{campaign.title}</span>
+                                          {campaign.endDate && (
+                                            <span className="ml-2 text-xs text-gray-400">
+                                              Expires: {format(new Date(campaign.endDate), 'MMM dd, yyyy')}
+                                            </span>
+                                          )}
+                                        </div>
+                                      </div>
+                                      <div className="flex items-center gap-3 text-xs">
+                                        <span className="px-2 py-1 rounded-full bg-emerald-600/20 text-emerald-400 font-semibold">
+                                          {campaign.stats.active} Active
+                                        </span>
+                                        <span className="px-2 py-1 rounded-full bg-gray-600/20 text-gray-400 font-semibold">
+                                          {campaign.stats.redeemed} Redeemed
+                                        </span>
+                                        <span className="text-gray-500">
+                                          Total: {campaign.stats.total}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Order Summary (No QR Images) */}
+                                  <div className="bg-gray-50 dark:bg-[#0f0f0f] divide-y divide-gray-200 dark:divide-gray-800">
+                                    {campaign.priceGroups.map((priceGroup) => {
+                                      const groupKey = `${campaign.id}-${priceGroup.priceKey ?? priceGroup.price}`;
+                                      const printCost = priceGroup.qrs.length * 1; // ₹1 per QR
+                                      return (
+                                        <div key={groupKey} className="p-4">
+                                          <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-4">
+                                              <div>
+                                                <div className="text-xs text-gray-500">Cashback Amount</div>
+                                                <div className="text-lg font-bold text-emerald-400">₹{formatAmount(priceGroup.price)}</div>
+                                              </div>
+                                              <div>
+                                                <div className="text-xs text-gray-500">Quantity</div>
+                                                <div className="text-lg font-bold text-gray-900 dark:text-white">{priceGroup.qrs.length} QRs</div>
+                                              </div>
+                                              <div>
+                                                <div className="text-xs text-gray-500">Print Cost</div>
+                                                <div className="text-lg font-bold text-cyan-400">₹{printCost}</div>
+                                              </div>
+                                            </div>
+                                            <div className="text-right">
+                                              <div className="text-xs text-gray-500">Status</div>
+                                              <div className="text-sm font-semibold text-yellow-400">
+                                                {priceGroup.activeCount > 0 ? 'Shipped' : 'Pending'}
+                                              </div>
+                                              <div className="text-[10px] text-gray-500">
+                                                {priceGroup.activeCount} active · {priceGroup.redeemedCount} redeemed
+                                              </div>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          <div className="text-[10px] text-gray-500 flex items-center justify-between">
+                            <span>Total: {qrs.length} QR{qrs.length !== 1 ? 's' : ''} across {qrsGroupedByCampaign.length} campaign{qrsGroupedByCampaign.length !== 1 ? 's' : ''}</span>
+                            <span>{qrStats.redeemed} redeemed · {qrStats.active} active</span>
+                          </div>
+                        </div>
+                        {qrActionStatus && (
+                          <div className="text-xs text-green-600 font-semibold">{qrActionStatus}</div>
+                        )}
+                      </div>
+                    )}
+
+
+                    {/* Products Section */}
+                    {activeTab === 'products' && (
+                      <div className="bg-white dark:bg-[#1a1a1a] rounded-xl border border-gray-100 dark:border-gray-800 p-5 shadow-sm dark:shadow-none space-y-4" id="products">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2 text-base font-bold text-gray-900 dark:text-white">
+                            <Package size={18} className="text-emerald-400" />
+                            Products
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => loadProducts()}
+                            disabled={isLoadingProducts}
+                            className="flex items-center gap-1 text-xs font-semibold text-gray-400 hover:text-white"
+                          >
+                            <RefreshCw size={12} />
+                            Refresh
+                          </button>
+                        </div>
+
+                        {/* Add Product Form */}
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-medium text-gray-500">Product name *</label>
+                            <input
+                              type="text"
+                              value={productForm.name}
+                              onChange={handleProductChange("name")}
+                              placeholder="e.g. Product XYZ"
+                              className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#0f0f0f] px-3 py-1.5 text-xs text-gray-900 dark:text-white placeholder-gray-500"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-medium text-gray-500">Variant</label>
+                            <input
+                              type="text"
+                              value={productForm.variant}
+                              onChange={handleProductChange("variant")}
+                              placeholder="e.g. 500ml, Red, Large"
+                              className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#0f0f0f] px-3 py-1.5 text-xs text-gray-900 dark:text-white placeholder-gray-500"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-medium text-gray-500">Category</label>
+                            <input
+                              type="text"
+                              value={productForm.category}
+                              onChange={handleProductChange("category")}
+                              placeholder="e.g. Beverages, Electronics"
+                              className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#0f0f0f] px-3 py-1.5 text-xs text-gray-900 dark:text-white placeholder-gray-500"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-medium text-gray-500">Image URL</label>
+                            <input
+                              type="text"
+                              value={productForm.imageUrl}
+                              onChange={handleProductChange("imageUrl")}
+                              placeholder="https://..."
+                              className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#0f0f0f] px-3 py-1.5 text-xs text-gray-900 dark:text-white placeholder-gray-500"
+                            />
+                          </div>
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-medium text-gray-500">Description</label>
+                          <textarea
+                            rows="2"
+                            value={productForm.description}
+                            onChange={handleProductChange("description")}
+                            placeholder="Product description..."
+                            className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#0f0f0f] px-3 py-1.5 text-xs text-gray-900 dark:text-white placeholder-gray-500"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleAddProduct}
+                          disabled={isSavingProduct}
+                          className="w-full rounded-lg bg-emerald-600 text-white text-sm font-semibold py-2.5 shadow-lg hover:bg-emerald-700 disabled:opacity-60 transition-colors"
+                        >
+                          {isSavingProduct ? "Adding..." : "Add Product"}
+                        </button>
+                        {productStatus && (
+                          <div className="text-xs text-green-500 font-semibold">{productStatus}</div>
+                        )}
+                        {productError && (
+                          <div className="text-xs text-red-500 font-semibold">{productError}</div>
+                        )}
+
+                        {/* Products List */}
+                        {isLoadingProducts ? (
+                          <div className="text-xs text-gray-400">Loading products...</div>
+                        ) : products.length === 0 ? (
+                          <div className="text-xs text-gray-500">No products yet. Add your first product above.</div>
+                        ) : (
+                          <div className="overflow-x-auto rounded-lg border border-gray-100 dark:border-gray-800">
+                            <table className="w-full text-xs">
+                              <thead className="bg-emerald-600 text-white">
+                                <tr>
+                                  <th className="px-3 py-2 text-left font-semibold">Name</th>
+                                  <th className="px-3 py-2 text-left font-semibold">Variant</th>
+                                  <th className="px-3 py-2 text-left font-semibold">Category</th>
+                                  <th className="px-3 py-2 text-left font-semibold">Status</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                                {products.map((product, idx) => (
+                                  <tr key={product.id} className={idx % 2 === 0 ? 'bg-gray-50 dark:bg-[#1a1a1a]' : 'bg-white dark:bg-[#0f0f0f]'}>
+                                    <td className="px-3 py-2 text-gray-900 dark:text-white font-medium">{product.name}</td>
+                                    <td className="px-3 py-2 text-gray-400">{product.variant || '-'}</td>
+                                    <td className="px-3 py-2 text-gray-400">{product.category || '-'}</td>
+                                    <td className="px-3 py-2">
+                                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${product.status === 'active'
+                                        ? 'bg-emerald-600/20 text-emerald-400'
+                                        : 'bg-gray-600/20 text-gray-400'
+                                        }`}>
+                                        {product.status}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                        <div className="text-[10px] text-gray-500">
+                          Total: {products.length} product{products.length !== 1 ? 's' : ''}
+                        </div>
+                      </div>
+                    )}
+                    {activeTab === 'wallet' && (
+                      <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-100 dark:border-zinc-800 p-4 shadow-sm space-y-3" id="wallet">
+                        <div className="flex items-center gap-2 text-sm font-semibold text-gray-800 dark:text-gray-200">
+                          <Wallet size={16} className="text-primary-strong" />
+                          Wallet controls
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="rounded-xl border border-gray-100 dark:border-zinc-800 p-3">
+                            <div className="text-[10px] text-gray-500 dark:text-gray-400">Balance</div>
+                            <div
+                              className="text-sm font-bold text-gray-900 dark:text-gray-100 whitespace-normal break-words"
+                              title={`INR ${formatAmount(walletBalance)}`}
+                            >
+                              INR {formatCompactAmount(walletBalance)}
+                            </div>
+                          </div>
+                          <div className="rounded-xl border border-gray-100 dark:border-zinc-800 p-3">
+                            <div className="text-[10px] text-gray-500 dark:text-gray-400">
+                              Locked balance
+                            </div>
+                            <div
+                              className="text-sm font-bold text-gray-900 dark:text-gray-100 whitespace-normal break-words"
+                              title={`INR ${formatAmount(lockedBalance)}`}
+                            >
+                              INR {formatCompactAmount(lockedBalance)}
+                            </div>
+                          </div>
+                        </div>
+                        {isLoadingWallet && (
+                          <div className="text-xs text-gray-500 dark:text-gray-400">Loading wallet...</div>
+                        )}
+                        <div className="space-y-2">
+                          <label className="text-xs font-semibold text-gray-500 dark:text-gray-400">
+                            Recharge amount
+                          </label>
+                          <input
+                            type="number"
+                            min="1"
+                            value={rechargeAmount}
+                            onChange={(event) => setRechargeAmount(event.target.value)}
+                            placeholder="Enter amount in INR"
+                            className="w-full rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-gray-900 dark:text-gray-100"
+                          />
+                          <button
+                            type="button"
+                            onClick={handleRecharge}
+                            disabled={isRecharging}
+                            className="w-full rounded-lg bg-emerald-600 text-white text-sm font-semibold py-2.5 shadow-lg hover:bg-emerald-700 disabled:opacity-60 transition-colors"
+                          >
+                            {isRecharging ? "Recharging..." : "Recharge wallet"}
+                          </button>
+                        </div>
+                        {walletStatus && (
+                          <div className="text-xs text-green-600 font-semibold">{walletStatus}</div>
+                        )}
+                        {walletError && <div className="text-xs text-red-600 font-semibold">{walletError}</div>}
+                      </div>
+                    )}
+
+                    {activeTab === 'scan' && (
+                      <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-100 dark:border-zinc-800 p-4 shadow-sm space-y-3" id="scan">
+                        <div className="flex items-center gap-2 text-sm font-semibold text-gray-800 dark:text-gray-200">
+                          <ScanLine size={16} className="text-primary-strong" />
+                          Scan and redeem
+                        </div>
+                        <input
+                          type="text"
+                          value={scanHash}
+                          onChange={(event) => setScanHash(event.target.value)}
+                          placeholder="Paste QR hash"
+                          className="w-full rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-gray-900 dark:text-gray-100"
+                        />
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={handleVerifyQr}
+                            disabled={isVerifying}
+                            className="w-full rounded-xl bg-gray-100 text-gray-800 text-sm font-semibold py-2 shadow-sm disabled:opacity-60 dark:bg-zinc-800 dark:text-gray-200"
+                          >
+                            {isVerifying ? "Verifying..." : "Verify"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleRedeemQr}
+                            disabled={isRedeeming}
+                            className="w-full rounded-xl bg-primary text-white text-sm font-semibold py-2 shadow-md disabled:opacity-60"
+                          >
+                            {isRedeeming ? "Redeeming..." : "Redeem"}
+                          </button>
+                        </div>
+                        {verifyData && (
+                          <div className="rounded-xl border border-gray-100 dark:border-zinc-800 p-3 space-y-1">
+                            <div className="flex items-center gap-2 text-xs font-semibold text-gray-700 dark:text-gray-300">
+                              <BadgeCheck size={14} className="text-green-600" />
+                              {verifyData.campaign || "QR verified"}
+                            </div>
+                            <div className="text-[10px] text-gray-500 dark:text-gray-400">
+                              {verifyData.brand} - INR {formatAmount(verifyData.amount)}
+                            </div>
+                          </div>
+                        )}
+                        {scanStatus && (
+                          <div className="text-xs text-green-600 font-semibold">{scanStatus}</div>
+                        )}
+                        {scanError && <div className="text-xs text-red-600 font-semibold">{scanError}</div>}
+                      </div>
+                    )}
+
+
+                  </main>
+                </div>
+              </div>
+              {/* QR Preview Modal Start */}
+              {activeQr && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+                  <div className="w-full max-w-sm rounded-2xl bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+                        {activeQr.Campaign?.title || "QR preview"}
+                      </div>
                       <button
                         type="button"
-                        onClick={() => handleCopyHash(hash)}
-                        className="text-[10px] font-semibold text-primary-strong dark:text-primary"
+                        onClick={() => setActiveQr(null)}
+                        className="text-xs font-semibold text-gray-500 dark:text-gray-400"
                       >
-                        Copy
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setActiveQr({ uniqueHash: hash, Campaign: { title: "QR Preview" } })}
-                        className="text-[10px] font-semibold text-gray-600 dark:text-gray-300"
-                      >
-                        View
+                        Close
                       </button>
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-100 dark:border-zinc-800 p-4 shadow-sm space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-sm font-semibold text-gray-800 dark:text-gray-200">
-                <ClipboardCheck size={16} className="text-primary-strong" />
-                QR inventory
-              </div>
-              <button
-                type="button"
-                onClick={() => loadQrs()}
-                disabled={isLoadingQrs}
-                className="flex items-center gap-1 text-xs font-semibold text-gray-500 dark:text-gray-400"
-              >
-                <RefreshCw size={12} />
-                Refresh
-              </button>
-            </div>
-            {isLoadingQrs && (
-              <div className="text-xs text-gray-500 dark:text-gray-400">Loading QRs...</div>
-            )}
-            {qrError && <div className="text-xs text-red-600 font-semibold">{qrError}</div>}
-            {!isLoadingQrs && inventoryQrs.length === 0 && (
-              <div className="text-xs text-gray-500 dark:text-gray-400">
-                No QR batches yet.
-              </div>
-            )}
-            {qrStats.total > 0 && (
-              <div className="flex items-center justify-between text-[10px] text-gray-500 dark:text-gray-400">
-                <span>
-                  Showing {inventoryQrs.length} of {qrStats.total}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setShowAllInventory((prev) => !prev)}
-                  className="font-semibold text-primary-strong dark:text-primary"
-                >
-                  {showAllInventory ? "Show less" : "View all"}
-                </button>
-              </div>
-            )}
-            <div
-              className={`space-y-2 ${showAllInventory ? "max-h-64 overflow-y-auto pr-1" : ""}`}
-            >
-              {inventoryQrs.map((qr) => (
-                <div
-                  key={qr.id}
-                  className="flex items-center justify-between rounded-xl border border-gray-100 dark:border-zinc-800 px-3 py-2"
-                >
-                  <div>
-                    <div className="text-xs font-semibold text-gray-700 dark:text-gray-300">
-                      {qr.Campaign?.title || "Campaign"}
-                    </div>
-                    <div className="text-[10px] text-gray-500 dark:text-gray-400">
-                      {qr.uniqueHash.slice(0, 12)}...
-                    </div>
-                  </div>
-                  <div className="flex flex-col items-end gap-1">
-                    <div className={`text-[10px] font-semibold ${getStatusClasses(qr.status)}`}>
-                      {qr.status}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setActiveQr(qr)}
-                      className="text-[10px] font-semibold text-gray-600 dark:text-gray-300"
-                    >
-                      View QR
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-100 dark:border-zinc-800 p-4 shadow-sm space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-sm font-semibold text-gray-800 dark:text-gray-200">
-                <QrCode size={16} className="text-primary-strong" />
-                QR gallery
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="text-[10px] text-gray-500 dark:text-gray-400">
-                  {qrGallery.length} QRs
-                </div>
-                <button
-                  type="button"
-                  onClick={() =>
-                    qrCarouselRef.current?.scrollBy({ left: -240, behavior: "smooth" })
-                  }
-                  className="h-7 w-7 rounded-full border border-gray-100 dark:border-zinc-800 flex items-center justify-center text-gray-600 dark:text-gray-300"
-                  aria-label="Scroll left"
-                >
-                  <ChevronLeft size={14} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    qrCarouselRef.current?.scrollBy({ left: 240, behavior: "smooth" })
-                  }
-                  className="h-7 w-7 rounded-full border border-gray-100 dark:border-zinc-800 flex items-center justify-center text-gray-600 dark:text-gray-300"
-                  aria-label="Scroll right"
-                >
-                  <ChevronRight size={14} />
-                </button>
-              </div>
-            </div>
-            {qrGallery.length === 0 ? (
-              <div className="text-xs text-gray-500 dark:text-gray-400">
-                No QR codes to preview yet.
-              </div>
-            ) : (
-              <div
-                ref={qrCarouselRef}
-                className="flex gap-3 overflow-x-auto pb-2 snap-x snap-mandatory no-scrollbar"
-              >
-                {qrGallery.map((qr) => (
-                  <div
-                    key={qr.id}
-                    className="min-w-[170px] snap-start rounded-xl border border-gray-100 dark:border-zinc-800 p-3 bg-gray-50/60 dark:bg-zinc-950"
-                  >
-                    <div className="flex items-center justify-center rounded-lg bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 p-2">
+                    <div className="flex items-center justify-center rounded-xl border border-gray-100 dark:border-zinc-800 bg-gray-50/60 dark:bg-zinc-950 p-4">
                       <QRCodeCanvas
-                        id={getQrCanvasId(qr.uniqueHash)}
-                        value={getQrValue(qr.uniqueHash)}
-                        size={110}
+                        id={getQrCanvasId(activeQr.uniqueHash)}
+                        value={getQrValue(activeQr.uniqueHash)}
+                        size={220}
                         level="M"
                         includeMargin
                       />
                     </div>
-                    <div className="mt-2 text-[10px] text-gray-500 dark:text-gray-400 break-all">
-                      {qr.uniqueHash.slice(0, 16)}...
+                    <div className="text-[10px] text-gray-500 dark:text-gray-400 break-all">
+                      {activeQr.uniqueHash}
                     </div>
-                    <div className={`mt-1 text-[10px] font-semibold ${getStatusClasses(qr.status)}`}>
-                      {qr.status}
-                    </div>
-                    <div className="mt-2 flex items-center justify-between text-[10px] font-semibold">
+                    <div className="grid grid-cols-3 gap-2 text-xs font-semibold">
                       <button
                         type="button"
-                        onClick={() => setActiveQr(qr)}
-                        className="text-primary-strong dark:text-primary"
-                      >
-                        View
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDownloadQr(qr.uniqueHash)}
-                        className="text-gray-600 dark:text-gray-300"
+                        onClick={() => handleDownloadQr(activeQr.uniqueHash)}
+                        className="rounded-xl bg-primary text-white py-2"
                       >
                         Download
                       </button>
                       <button
                         type="button"
-                        onClick={() => handleCopyHash(qr.uniqueHash)}
-                        className="text-gray-600 dark:text-gray-300"
+                        onClick={() => handlePrintQr(activeQr.uniqueHash)}
+                        className="rounded-xl bg-gray-900 text-white py-2 dark:bg-white dark:text-gray-900"
+                      >
+                        Print
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleCopyHash(activeQr.uniqueHash)}
+                        className="rounded-xl bg-gray-100 text-gray-700 py-2 dark:bg-zinc-800 dark:text-gray-200"
                       >
                         Copy
                       </button>
                     </div>
+                    <div className="text-[10px] text-gray-500 dark:text-gray-400">
+                      Encoded: {getQrValue(activeQr.uniqueHash)}
+                    </div>
                   </div>
-                ))}
-              </div>
-            )}
-            {qrActionStatus && (
-              <div className="text-xs text-green-600 font-semibold">{qrActionStatus}</div>
-            )}
-          </div>
-
-          <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-100 dark:border-zinc-800 p-4 shadow-sm space-y-3">
-            <div className="flex items-center gap-2 text-sm font-semibold text-gray-800 dark:text-gray-200">
-              <ScanLine size={16} className="text-primary-strong" />
-              Scan and redeem
-            </div>
-            <input
-              type="text"
-              value={scanHash}
-              onChange={(event) => setScanHash(event.target.value)}
-              placeholder="Paste QR hash"
-              className="w-full rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-gray-900 dark:text-gray-100"
-            />
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={handleVerifyQr}
-                disabled={isVerifying}
-                className="w-full rounded-xl bg-gray-100 text-gray-800 text-sm font-semibold py-2 shadow-sm disabled:opacity-60 dark:bg-zinc-800 dark:text-gray-200"
-              >
-                {isVerifying ? "Verifying..." : "Verify"}
-              </button>
-              <button
-                type="button"
-                onClick={handleRedeemQr}
-                disabled={isRedeeming}
-                className="w-full rounded-xl bg-primary text-white text-sm font-semibold py-2 shadow-md disabled:opacity-60"
-              >
-                {isRedeeming ? "Redeeming..." : "Redeem"}
-              </button>
-            </div>
-            {verifyData && (
-              <div className="rounded-xl border border-gray-100 dark:border-zinc-800 p-3 space-y-1">
-                <div className="flex items-center gap-2 text-xs font-semibold text-gray-700 dark:text-gray-300">
-                  <BadgeCheck size={14} className="text-green-600" />
-                  {verifyData.campaign || "QR verified"}
                 </div>
-                <div className="text-[10px] text-gray-500 dark:text-gray-400">
-                  {verifyData.brand} - INR {formatAmount(verifyData.amount)}
-                </div>
-              </div>
-            )}
-            {scanStatus && (
-              <div className="text-xs text-green-600 font-semibold">{scanStatus}</div>
-            )}
-            {scanError && <div className="text-xs text-red-600 font-semibold">{scanError}</div>}
-          </div>
+              )}
+            </>
+          )
+          }
         </>
       )}
-
-      {activeQr && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
-          <div className="w-full max-w-sm rounded-2xl bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="text-sm font-semibold text-gray-800 dark:text-gray-200">
-                {activeQr.Campaign?.title || "QR preview"}
-              </div>
-              <button
-                type="button"
-                onClick={() => setActiveQr(null)}
-                className="text-xs font-semibold text-gray-500 dark:text-gray-400"
-              >
-                Close
-              </button>
-            </div>
-            <div className="flex items-center justify-center rounded-xl border border-gray-100 dark:border-zinc-800 bg-gray-50/60 dark:bg-zinc-950 p-4">
-              <QRCodeCanvas
-                id={getQrCanvasId(activeQr.uniqueHash)}
-                value={getQrValue(activeQr.uniqueHash)}
-                size={220}
-                level="M"
-                includeMargin
-              />
-            </div>
-            <div className="text-[10px] text-gray-500 dark:text-gray-400 break-all">
-              {activeQr.uniqueHash}
-            </div>
-            <div className="grid grid-cols-3 gap-2 text-xs font-semibold">
-              <button
-                type="button"
-                onClick={() => handleDownloadQr(activeQr.uniqueHash)}
-                className="rounded-xl bg-primary text-white py-2"
-              >
-                Download
-              </button>
-              <button
-                type="button"
-                onClick={() => handlePrintQr(activeQr.uniqueHash)}
-                className="rounded-xl bg-gray-900 text-white py-2 dark:bg-white dark:text-gray-900"
-              >
-                Print
-              </button>
-              <button
-                type="button"
-                onClick={() => handleCopyHash(activeQr.uniqueHash)}
-                className="rounded-xl bg-gray-100 text-gray-700 py-2 dark:bg-zinc-800 dark:text-gray-200"
-              >
-                Copy
-              </button>
-            </div>
-            <div className="text-[10px] text-gray-500 dark:text-gray-400">
-              Encoded: {getQrValue(activeQr.uniqueHash)}
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+    </div >
   );
 };
 

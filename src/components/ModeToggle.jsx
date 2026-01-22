@@ -32,8 +32,11 @@ export function ModeToggle() {
                 className="relative inline-flex items-center justify-center rounded-md w-9 h-9 text-sm font-medium transition-colors hover:bg-gray-100 dark:hover:bg-gray-800 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring border border-gray-200 dark:border-gray-800 bg-transparent shadow-sm"
                 aria-label="Toggle theme"
             >
-                <Sun className={`h-[1.2rem] w-[1.2rem] transition-all ${effectiveTheme === 'dark' ? 'rotate-90 scale-0' : 'rotate-0 scale-100'}`} />
-                <Moon className={`absolute h-[1.2rem] w-[1.2rem] transition-all ${effectiveTheme === 'dark' ? 'rotate-0 scale-100' : '-rotate-90 scale-0'}`} />
+                {effectiveTheme === 'dark' ? (
+                    <Moon className="h-[1.2rem] w-[1.2rem]" />
+                ) : (
+                    <Sun className="h-[1.2rem] w-[1.2rem]" />
+                )}
             </button>
 
             {isOpen && (

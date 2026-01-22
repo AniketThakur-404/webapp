@@ -9,7 +9,12 @@ import {
     LogOut,
     UserCircle2,
     Shield,
+    Store,
+    Building2,
+    ShieldCheck,
+    Wallet,
 } from 'lucide-react';
+import StarBorder from './StarBorder';
 import { useTheme } from "./ThemeProvider";
 
 const AdminSidebar = ({
@@ -20,6 +25,7 @@ const AdminSidebar = ({
     onLogout
 }) => {
     const [settingsOpen, setSettingsOpen] = useState(false);
+    const [openMenus, setOpenMenus] = useState({ vendors: true });
     const { effectiveTheme } = useTheme();
     const logoSrc =
         effectiveTheme === "dark"
@@ -28,8 +34,19 @@ const AdminSidebar = ({
 
     const navItems = [
         { id: 'overview', label: 'Dashboard', icon: LayoutGrid },
-        { id: 'transactions', label: 'Transaction', icon: ArrowLeftRight },
+        { id: 'transactions', label: 'Transactions', icon: ArrowLeftRight },
         { id: 'operations', label: 'Services', icon: Gift },
+        {
+            id: 'vendors',
+            label: 'Vendors',
+            icon: Store,
+            subItems: [
+                { id: 'vendors-create', label: 'Create Brand', icon: Building2 },
+                { id: 'vendors-active', label: 'Active Vendors', icon: ShieldCheck },
+                { id: 'vendors-paused', label: 'Paused Vendors', icon: Shield },
+                { id: 'subscriptions', label: 'Subscriptions', icon: Wallet },
+            ]
+        },
         { id: 'payouts', label: 'Promotions', icon: Gift },
     ];
 
@@ -98,17 +115,73 @@ const AdminSidebar = ({
                     )}
                     {navItems.map((item) => {
                         const Icon = item.icon;
+                        const hasSubItems = Array.isArray(item.subItems);
+                        if (hasSubItems) {
+                            const isOpen = openMenus[item.id];
+                            return (
+                                <div key={item.id} className="space-y-1">
+                                    <button
+                                        onClick={() => setOpenMenus((prev) => ({ ...prev, [item.id]: !prev[item.id] }))}
+                                        className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all text-slate-600 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/5 ${collapsed ? 'justify-center' : ''}`}
+                                        title={collapsed ? item.label : undefined}
+                                    >
+                                        <Icon size={20} className="flex-shrink-0" />
+                                        {!collapsed && (
+                                            <>
+                                                <span className="text-sm font-medium">{item.label}</span>
+                                                {isOpen ? (
+                                                    <ChevronDown size={16} className="ml-auto" />
+                                                ) : (
+                                                    <ChevronRight size={16} className="ml-auto" />
+                                                )}
+                                            </>
+                                        )}
+                                    </button>
+                                    {!collapsed && isOpen && (
+                                        <div className="ml-6 space-y-1">
+                                            {item.subItems.map((sub) => {
+                                                const SubIcon = sub.icon;
+                                                return (
+                                                    <button
+                                                        key={sub.id}
+                                                        onClick={() => onNavClick(sub.id)}
+                                                        className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors text-xs ${activeNav === sub.id ? 'bg-slate-900 text-white' : 'text-slate-600 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/5'}`}
+                                                    >
+                                                        <SubIcon size={16} />
+                                                        <span>{sub.label}</span>
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        }
                         const isActive = activeNav === item.id;
+                        if (isActive) {
+                            return (
+                                <StarBorder
+                                    key={item.id}
+                                    as="button"
+                                    onClick={() => onNavClick(item.id)}
+                                    color="#81cc2a"
+                                    speed="4s"
+                                    className={`w-full cursor-pointer ${collapsed ? 'justify-center mx-auto' : ''}`}
+                                >
+                                    <div className={`flex items-center gap-3 ${collapsed ? 'justify-center w-full' : 'px-1'}`}>
+                                        <Icon size={20} className="flex-shrink-0 text-[#81cc2a]" />
+                                        {!collapsed && <span className="text-sm font-medium text-white">{item.label}</span>}
+                                    </div>
+                                </StarBorder>
+                            );
+                        }
                         return (
-                    <button
-                        key={item.id}
-                        onClick={() => onNavClick(item.id)}
-                        className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all ${isActive
-                            ? 'bg-[#81cc2a] text-white shadow-lg'
-                            : 'text-slate-600 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/5 dark:hover:text-white'
-                            } ${collapsed ? 'justify-center' : ''}`}
-                        title={collapsed ? item.label : ''}
-                    >
+                            <button
+                                key={item.id}
+                                onClick={() => onNavClick(item.id)}
+                                className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all text-slate-600 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/5 dark:hover:text-white ${collapsed ? 'justify-center' : ''}`}
+                                title={collapsed ? item.label : ''}
+                            >
                                 <Icon size={20} className="flex-shrink-0" />
                                 {!collapsed && <span className="text-sm font-medium">{item.label}</span>}
                             </button>
@@ -141,11 +214,11 @@ const AdminSidebar = ({
                             {settingsItems.map((item) => {
                                 const Icon = item.icon;
                                 return (
-                            <button
-                                key={item.id}
-                                onClick={() => onNavClick(item.id)}
-                                className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-slate-600 dark:text-gray-200 hover:bg-slate-100 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white transition-all text-sm"
-                            >
+                                    <button
+                                        key={item.id}
+                                        onClick={() => onNavClick(item.id)}
+                                        className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-slate-600 dark:text-gray-200 hover:bg-slate-100 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white transition-all text-sm"
+                                    >
                                         <Icon size={18} className="flex-shrink-0" />
                                         <span>{item.label}</span>
                                     </button>

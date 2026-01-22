@@ -1,11 +1,13 @@
 import React, { useEffect, useRef, useState } from "react";
-import { LogIn, LogOut, User, Wallet } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { LogIn, LogOut, User, Wallet, HelpCircle } from "lucide-react";
+import { useNavigate, useLocation } from "react-router-dom";
+import StarBorder from "./StarBorder";
 import { getMe } from "../lib/api";
 import { AUTH_CHANGE_EVENT, AUTH_TOKEN_KEY, clearAuthToken } from "../lib/auth";
 
 const UserProfileMenu = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const containerRef = useRef(null);
   const [token, setToken] = useState(() => {
     if (typeof window === "undefined") return null;
@@ -97,6 +99,11 @@ const UserProfileMenu = () => {
     navigate("/wallet");
   };
 
+  const goToHelp = () => {
+    setIsOpen(false);
+    navigate("/help");
+  };
+
   return (
     <div ref={containerRef} className="relative">
       <button
@@ -132,21 +139,61 @@ const UserProfileMenu = () => {
           )}
 
           <div className="mt-4 space-y-2 border-t border-gray-100 pt-3 text-sm font-semibold dark:border-zinc-800">
+            {location.pathname === "/wallet" ? (
+              <StarBorder
+                as="button"
+                onClick={goToWallet}
+                color="#81cc2a"
+                speed="4s"
+                className="w-full cursor-pointer"
+              >
+                <div className="flex items-center gap-2">
+                  <Wallet size={16} className="text-[#81cc2a]" />
+                  <span className="font-semibold text-white">Wallet</span>
+                </div>
+              </StarBorder>
+            ) : (
+              <button
+                type="button"
+                onClick={goToWallet}
+                className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-gray-700 transition hover:bg-gray-100 dark:text-gray-100 dark:hover:bg-zinc-800"
+              >
+                <Wallet size={16} />
+                Wallet
+              </button>
+            )}
+
+            {location.pathname === "/profile" ? (
+              <StarBorder
+                as="button"
+                onClick={goToProfile}
+                color="#81cc2a"
+                speed="4s"
+                className="w-full cursor-pointer"
+              >
+                <div className="flex items-center gap-2">
+                  <User size={16} className="text-[#81cc2a]" />
+                  <span className="font-semibold text-white">Profile</span>
+                </div>
+              </StarBorder>
+            ) : (
+              <button
+                type="button"
+                onClick={goToProfile}
+                className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-gray-700 transition hover:bg-gray-100 dark:text-gray-100 dark:hover:bg-zinc-800"
+              >
+                <User size={16} />
+                Profile
+              </button>
+            )}
+            <div className="my-1 border-t border-gray-100 dark:border-zinc-800" />
             <button
               type="button"
-              onClick={goToWallet}
+              onClick={goToHelp}
               className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-gray-700 transition hover:bg-gray-100 dark:text-gray-100 dark:hover:bg-zinc-800"
             >
-              <Wallet size={16} />
-              Wallet
-            </button>
-            <button
-              type="button"
-              onClick={goToProfile}
-              className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-gray-700 transition hover:bg-gray-100 dark:text-gray-100 dark:hover:bg-zinc-800"
-            >
-              <User size={16} />
-              Profile
+              <HelpCircle size={16} />
+              Help & Support
             </button>
             {isAuthenticated ? (
               <button
