@@ -1,11 +1,13 @@
-// API base URL can be overridden via VITE_API_BASE_URL; default uses same origin.
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
+// API base URL can be overridden via VITE_API_BASE_URL; default uses backend in dev.
+const DEV_DEFAULT_API = "http://localhost:5000";
+const ENV_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
+const BASE_URL = ENV_BASE_URL || (import.meta.env.DEV ? DEV_DEFAULT_API : "");
 
-const buildUrl = (path) => {
+const buildUrl = (path, baseOverride = BASE_URL) => {
   if (!path.startsWith("/")) {
     throw new Error("API path must start with /");
   }
-  return `${API_BASE_URL}${path}`;
+  return `${baseOverride}${path}`;
 };
 
 const parseResponse = async (response) => {
@@ -21,7 +23,9 @@ export const apiRequest = async (path, { method = "GET", body, token, headers } 
     ...(headers || {}),
   };
 
-  if (body !== undefined) {
+  const isFormData = typeof FormData !== "undefined" && body instanceof FormData;
+
+  if (body !== undefined && !isFormData) {
     requestHeaders["Content-Type"] = "application/json";
   }
 
@@ -29,12 +33,12 @@ export const apiRequest = async (path, { method = "GET", body, token, headers } 
     requestHeaders.Authorization = `Bearer ${token}`;
   }
 
-  const response = await fetch(buildUrl(path), {
+  const primaryUrl = buildUrl(path);
+  const response = await fetch(primaryUrl, {
     method,
     headers: requestHeaders,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    body: body === undefined ? undefined : isFormData ? body : JSON.stringify(body),
   });
-
   const data = await parseResponse(response);
 
   if (!response.ok) {

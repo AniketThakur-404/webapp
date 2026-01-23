@@ -36,6 +36,16 @@ export const loginWithEmail = (email, password, username) =>
     body: { email, password, username },
   });
 
+export const uploadImage = (token, file) => {
+  const formData = new FormData();
+  formData.append("image", file);
+  return apiRequest("/api/upload", {
+    method: "POST",
+    token,
+    body: formData,
+  });
+};
+
 export const getMe = (token) =>
   apiRequest("/api/auth/me", {
     token,
@@ -50,6 +60,11 @@ export const updateUserProfile = (token, payload) =>
 
 export const getVendorWallet = (token) =>
   apiRequest("/api/vendor/wallet", {
+    token,
+  });
+
+export const getVendorTransactions = (token, params) =>
+  apiRequest(`/api/vendor/transactions${buildQueryString(params)}`, {
     token,
   });
 
@@ -95,6 +110,13 @@ export const getVendorProfile = (token) =>
 export const updateVendorProfile = (token, payload) =>
   apiRequest("/api/vendor/profile", {
     method: "PUT",
+    token,
+    body: payload,
+  });
+
+export const requestVendorCredentialUpdate = (token, payload) =>
+  apiRequest("/api/vendor/credentials/request", {
+    method: "POST",
     token,
     body: payload,
   });
@@ -303,6 +325,32 @@ export const getAdminVendorOverview = (token, vendorId) =>
 
 export const updateAdminVendorDetails = (token, vendorId, payload) =>
   apiRequest(`/api/admin/vendors/${vendorId}`, {
+    method: "PUT",
+    token,
+    body: payload,
+  });
+
+export const updateAdminVendorCredentials = (token, vendorId, payload) =>
+  apiRequest(`/api/admin/vendors/${vendorId}/credentials`, {
+    method: "PUT",
+    token,
+    body: payload,
+  });
+
+export const getAdminVendorCredentialRequests = (token, vendorId, params) =>
+  apiRequest(`/api/admin/vendors/${vendorId}/credential-requests${buildQueryString(params)}`, {
+    token,
+  });
+
+export const approveAdminCredentialRequest = (token, requestId, payload) =>
+  apiRequest(`/api/admin/credential-requests/${requestId}/approve`, {
+    method: "PUT",
+    token,
+    body: payload,
+  });
+
+export const rejectAdminCredentialRequest = (token, requestId, payload) =>
+  apiRequest(`/api/admin/credential-requests/${requestId}/reject`, {
     method: "PUT",
     token,
     body: payload,

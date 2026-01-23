@@ -21,6 +21,7 @@ import {
     Activity,
     Info,
     Eye,
+    ShieldCheck,
     PieChart as PieChartIcon,
     BarChart as BarChartIcon,
     ShoppingBag,
@@ -28,6 +29,8 @@ import {
 } from "lucide-react";
 import { jsPDF } from "jspdf";
 import { QRCodeCanvas } from "qrcode.react";
+
+const MAX_QR_PRICE = 100;
 import {
     BarChart,
     Bar,
@@ -48,7 +51,12 @@ import {
     getAdminBrandOverview,
     updateAdminVendorDetails,
     updateAdminBrandDetails,
+    uploadImage,
     updateAdminBrandStatus,
+    updateAdminVendorCredentials,
+    getAdminVendorCredentialRequests,
+    approveAdminCredentialRequest,
+    rejectAdminCredentialRequest,
     getAdminCampaignAnalytics,
     updateAdminVendorStatus,
     adjustVendorWalletAdmin,
@@ -86,13 +94,16 @@ const MetricItem = ({ label, value }) => (
     </div>
 );
 
-const InputGroup = ({ label, value, onChange, type = "text" }) => (
+const InputGroup = ({ label, value, onChange, type = "text", min, max, step }) => (
     <div className="space-y-1.5">
         <label className="text-xs font-semibold text-slate-500 dark:text-slate-400">{label}</label>
         <input
             type={type}
             value={value}
             onChange={(e) => onChange(e.target.value)}
+            min={min}
+            max={max}
+            step={step}
             className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 text-sm focus:outline-none focus:border-[#81cc2a] transition-colors"
         />
     </div>
@@ -139,12 +150,27 @@ const VendorAccountManager = ({
     const [brandForm, setBrandForm] = useState({
         name: "",
         website: "",
-        logoUrl: ""
+        logoUrl: "",
+        qrPricePerUnit: ""
     });
+    const [isUploadingBrandLogo, setIsUploadingBrandLogo] = useState(false);
+    const [brandLogoUploadStatus, setBrandLogoUploadStatus] = useState("");
+    const [brandLogoUploadError, setBrandLogoUploadError] = useState("");
     const [brandStatusForm, setBrandStatusForm] = useState({
         status: "",
         reason: ""
     });
+    const [credentialForm, setCredentialForm] = useState({
+        username: "",
+        password: "",
+        confirmPassword: ""
+    });
+    const [credentialRequests, setCredentialRequests] = useState([]);
+    const [isLoadingCredentialRequests, setIsLoadingCredentialRequests] = useState(false);
+    const [credentialRequestError, setCredentialRequestError] = useState("");
+    const [isUpdatingCredentials, setIsUpdatingCredentials] = useState(false);
+    const [credentialActionStatus, setCredentialActionStatus] = useState("");
+    const [credentialActionError, setCredentialActionError] = useState("");
 
     // Action States
     const [isSaving, setIsSaving] = useState(false);
@@ -186,6 +212,24 @@ const VendorAccountManager = ({
         setActionMessage({ type: "error", text: message });
     };
 
+    const loadCredentialRequests = async () => {
+        if (!token || !vendorId) return;
+        setIsLoadingCredentialRequests(true);
+        setCredentialRequestError("");
+        try {
+            const data = await getAdminVendorCredentialRequests(token, vendorId, { status: "pending" });
+            setCredentialRequests(Array.isArray(data) ? data : []);
+        } catch (err) {
+            setCredentialRequestError(err.message || "Failed to load credential requests.");
+        } finally {
+            setIsLoadingCredentialRequests(false);
+        }
+    };
+
+    const pendingCredentialRequest = credentialRequests.find(
+        (request) => String(request?.status || "").toLowerCase() === "pending"
+    );
+
     // Fetch Data
     useEffect(() => {
         if (!token) return;
@@ -200,6 +244,21 @@ const VendorAccountManager = ({
             setAnalyticsData(null);
         }
     }, [selectedCampaign]);
+
+    useEffect(() => {
+        const fallbackUsername =
+            pendingCredentialRequest?.requestedUsername ||
+            vendorData?.vendor?.User?.username ||
+            vendorData?.vendor?.User?.email ||
+            "";
+
+        if (!fallbackUsername) return;
+
+        setCredentialForm((prev) => {
+            if (prev.username) return prev;
+            return { ...prev, username: fallbackUsername };
+        });
+    }, [pendingCredentialRequest?.requestedUsername, vendorData?.vendor?.User?.username, vendorData?.vendor?.User?.email]);
 
     const loadCampaignAnalytics = async (campaignId) => {
         try {
@@ -236,7 +295,11 @@ const VendorAccountManager = ({
                 setBrandForm({
                     name: bData.brand?.name || "",
                     website: bData.brand?.website || "",
-                    logoUrl: bData.brand?.logoUrl || ""
+                    logoUrl: bData.brand?.logoUrl || "",
+                    qrPricePerUnit:
+                        bData.brand?.qrPricePerUnit !== undefined && bData.brand?.qrPricePerUnit !== null
+                            ? String(bData.brand.qrPricePerUnit)
+                            : ""
                 });
                 setBrandStatusForm({
                     status: bData.brand?.status || "active",
@@ -277,6 +340,10 @@ const VendorAccountManager = ({
                 }
             }
 
+            if (vendorId) {
+                await loadCredentialRequests();
+            }
+
         } catch (err) {
             console.error(err);
             setError("Failed to load account details.");
@@ -303,6 +370,14 @@ const VendorAccountManager = ({
 
     const handleSaveBrand = async () => {
         if (!brandId) return;
+        const priceValue = brandForm.qrPricePerUnit === "" ? null : Number(brandForm.qrPricePerUnit);
+        if (priceValue !== null && (!Number.isFinite(priceValue) || priceValue <= 0 || priceValue > MAX_QR_PRICE)) {
+            setActionMessage({
+                type: "error",
+                text: `QR price per unit must be between 0.01 and ${MAX_QR_PRICE}.`
+            });
+            return;
+        }
         setIsSaving(true);
         setActionMessage({ type: "", text: "" });
         try {
@@ -317,6 +392,100 @@ const VendorAccountManager = ({
             setActionMessage({ type: "error", text: err.message || "Failed to update brand." });
         } finally {
             setIsSaving(false);
+        }
+    };
+
+    const handleBrandLogoUpload = async (event) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+        if (!token) {
+            setBrandLogoUploadError("Sign in to upload.");
+            return;
+        }
+        setBrandLogoUploadStatus("");
+        setBrandLogoUploadError("");
+        setIsUploadingBrandLogo(true);
+        try {
+            const data = await uploadImage(token, file);
+            const uploadedUrl = data?.url;
+            if (!uploadedUrl) {
+                throw new Error("Upload failed. No URL returned.");
+            }
+            setBrandForm((prev) => ({ ...prev, logoUrl: uploadedUrl }));
+            setBrandLogoUploadStatus("Logo uploaded.");
+        } catch (err) {
+            setBrandLogoUploadError(err.message || "Failed to upload logo.");
+        } finally {
+            setIsUploadingBrandLogo(false);
+            event.target.value = "";
+        }
+    };
+
+    const handleCredentialUpdate = async ({ useRequestDefaults } = {}) => {
+        if (!vendorId) return;
+        setCredentialActionStatus("");
+        setCredentialActionError("");
+
+        const trimmedUsername = credentialForm.username.trim();
+        const hasUsername = Boolean(trimmedUsername);
+        const hasPassword = Boolean(credentialForm.password);
+
+        if (hasPassword && credentialForm.password !== credentialForm.confirmPassword) {
+            setCredentialActionError("Passwords do not match.");
+            return;
+        }
+
+        const payload = {};
+        if (!useRequestDefaults && hasUsername) payload.username = trimmedUsername;
+        if (!useRequestDefaults && hasPassword) payload.password = credentialForm.password;
+
+        if (!pendingCredentialRequest && !Object.keys(payload).length) {
+            setCredentialActionError("Provide a username or password to update.");
+            return;
+        }
+
+        if (pendingCredentialRequest && useRequestDefaults && !pendingCredentialRequest.requestedUsername && !pendingCredentialRequest.requestedPassword) {
+            setCredentialActionError("No requested credentials available.");
+            return;
+        }
+
+        setIsUpdatingCredentials(true);
+        try {
+            if (pendingCredentialRequest) {
+                await approveAdminCredentialRequest(token, pendingCredentialRequest.id, payload);
+                setCredentialActionStatus("Credential request approved.");
+            } else {
+                await updateAdminVendorCredentials(token, vendorId, payload);
+                setCredentialActionStatus("Credentials updated.");
+            }
+
+            setCredentialForm((prev) => ({
+                ...prev,
+                password: "",
+                confirmPassword: ""
+            }));
+            await loadCredentialRequests();
+            await loadData();
+        } catch (err) {
+            setCredentialActionError(err.message || "Failed to update credentials.");
+        } finally {
+            setIsUpdatingCredentials(false);
+        }
+    };
+
+    const handleRejectCredentialRequest = async () => {
+        if (!pendingCredentialRequest) return;
+        setCredentialActionStatus("");
+        setCredentialActionError("");
+        setIsUpdatingCredentials(true);
+        try {
+            await rejectAdminCredentialRequest(token, pendingCredentialRequest.id, {});
+            setCredentialActionStatus("Credential request rejected.");
+            await loadCredentialRequests();
+        } catch (err) {
+            setCredentialActionError(err.message || "Failed to reject request.");
+        } finally {
+            setIsUpdatingCredentials(false);
         }
     };
 
@@ -373,6 +542,10 @@ const VendorAccountManager = ({
 
             const campaignTitle = order.campaignTitle || "Campaign";
             const priceLabel = formatAmount(order.cashbackAmount);
+            const perQrPrice = order.quantity ? Number(order.printCost || 0) / order.quantity : 0;
+            const perQrLabel = Number.isFinite(perQrPrice) && perQrPrice > 0 ? formatAmount(perQrPrice) : "0.00";
+            const printCostLabel = formatAmount(order.printCost || 0);
+            const headerOffset = 54;
 
             const drawHeader = () => {
                 doc.setFontSize(16);
@@ -381,6 +554,7 @@ const VendorAccountManager = ({
                 doc.text(`Campaign: ${campaignTitle}`, margin, 26);
                 doc.text(`Quantity: ${order.quantity}`, margin, 32);
                 doc.text(`Date: ${formatDate(order.createdAt)}`, margin, 38);
+                doc.text(`QR price: INR ${perQrLabel}/QR | Print cost: INR ${printCostLabel}`, margin, 44);
             };
 
             drawHeader();
@@ -398,7 +572,7 @@ const VendorAccountManager = ({
                 const col = localIndex % itemsPerRow;
                 const row = Math.floor(localIndex / itemsPerRow);
                 const xPos = margin + col * (qrSize + spacing);
-                const yPos = 46 + row * rowSpacing;
+                const yPos = headerOffset + row * rowSpacing;
 
                 const canvas = document.getElementById(getBatchCanvasId(qr.uniqueHash));
                 if (!canvas) {
@@ -781,7 +955,43 @@ const VendorAccountManager = ({
                                             <div className="space-y-4">
                                                 <InputGroup label="Brand Name" value={brandForm.name} onChange={(v) => setBrandForm({ ...brandForm, name: v })} />
                                                 <InputGroup label="Website" value={brandForm.website} onChange={(v) => setBrandForm({ ...brandForm, website: v })} />
-                                                <InputGroup label="Logo URL" value={brandForm.logoUrl} onChange={(v) => setBrandForm({ ...brandForm, logoUrl: v })} />
+                                                <div className="space-y-1.5">
+                                                    <label className="text-xs font-semibold text-slate-500 dark:text-slate-400">Brand Logo</label>
+                                                    <input
+                                                        type="file"
+                                                        accept="image/*"
+                                                        onChange={handleBrandLogoUpload}
+                                                        className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 text-sm focus:outline-none focus:border-[#81cc2a] transition-colors"
+                                                    />
+                                                    {brandForm.logoUrl && (
+                                                        <div className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400">
+                                                            <img
+                                                                src={brandForm.logoUrl}
+                                                                alt="Brand logo preview"
+                                                                className="h-8 w-8 rounded-lg object-cover border border-slate-200/70 dark:border-white/10"
+                                                            />
+                                                            <span>Logo uploaded</span>
+                                                        </div>
+                                                    )}
+                                                    {brandLogoUploadStatus && (
+                                                        <div className="text-[11px] text-emerald-600">{brandLogoUploadStatus}</div>
+                                                    )}
+                                                    {brandLogoUploadError && (
+                                                        <div className="text-[11px] text-rose-600">{brandLogoUploadError}</div>
+                                                    )}
+                                                    {isUploadingBrandLogo && (
+                                                        <div className="text-[11px] text-slate-400">Uploading...</div>
+                                                    )}
+                                                </div>
+                                                <InputGroup
+                                                    label="QR price per unit (INR)"
+                                                    type="number"
+                                                    value={brandForm.qrPricePerUnit}
+                                                    onChange={(v) => setBrandForm({ ...brandForm, qrPricePerUnit: v })}
+                                                    min="0.01"
+                                                    max={MAX_QR_PRICE}
+                                                    step="0.01"
+                                                />
                                             </div>
 
                                             <div className="my-6 border-t border-slate-100 dark:border-white/5" />
@@ -815,6 +1025,93 @@ const VendorAccountManager = ({
                                                     {isSaving ? <RotateCw className="animate-spin" size={16} /> : <Save size={16} />}
                                                     Update Brand
                                                 </button>
+                                            </div>
+                                            <div className="my-6 border-t border-slate-100 dark:border-white/5" />
+
+                                            <h3 className="text-base font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+                                                <ShieldCheck size={18} className="text-[#81cc2a]" /> Login Credentials
+                                            </h3>
+                                            <div className="space-y-4">
+                                                {pendingCredentialRequest ? (
+                                                    <div className="rounded-lg border border-amber-200/60 bg-amber-50/80 text-amber-700 px-4 py-3 text-xs">
+                                                        <div className="font-semibold">Pending credential request</div>
+                                                        <div className="mt-1">
+                                                            Requested: {pendingCredentialRequest.requestedUsername || "Password update"}
+                                                        </div>
+                                                        <div className="text-[10px] opacity-80">
+                                                            {formatDate(pendingCredentialRequest.createdAt)}
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <div className="rounded-lg border border-slate-200/60 bg-slate-50 text-slate-500 px-4 py-3 text-xs">
+                                                        No pending credential request from vendor.
+                                                    </div>
+                                                )}
+                                                {isLoadingCredentialRequests && (
+                                                    <div className="text-xs text-slate-500">Loading credential requests...</div>
+                                                )}
+
+                                                <InputGroup
+                                                    label="Username"
+                                                    value={credentialForm.username}
+                                                    onChange={(v) => setCredentialForm({ ...credentialForm, username: v })}
+                                                />
+                                                <InputGroup
+                                                    label="New Password"
+                                                    type="password"
+                                                    value={credentialForm.password}
+                                                    onChange={(v) => setCredentialForm({ ...credentialForm, password: v })}
+                                                />
+                                                <InputGroup
+                                                    label="Confirm Password"
+                                                    type="password"
+                                                    value={credentialForm.confirmPassword}
+                                                    onChange={(v) => setCredentialForm({ ...credentialForm, confirmPassword: v })}
+                                                />
+                                                <div className="text-[11px] text-slate-400">
+                                                    Leave password blank if you only want to change the username.
+                                                </div>
+
+                                                <div className="flex flex-wrap gap-3">
+                                                    {pendingCredentialRequest && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleCredentialUpdate({ useRequestDefaults: true })}
+                                                            disabled={isUpdatingCredentials}
+                                                            className="px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold shadow-lg shadow-amber-500/20 transition-all disabled:opacity-50"
+                                                        >
+                                                            Approve Request
+                                                        </button>
+                                                    )}
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleCredentialUpdate({ useRequestDefaults: false })}
+                                                        disabled={isUpdatingCredentials}
+                                                        className="px-4 py-2 rounded-lg bg-[#81cc2a] hover:bg-[#6ab024] text-white text-xs font-semibold shadow-lg shadow-emerald-500/20 transition-all disabled:opacity-50"
+                                                    >
+                                                        {pendingCredentialRequest ? "Approve with Overrides" : "Save Credentials"}
+                                                    </button>
+                                                    {pendingCredentialRequest && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={handleRejectCredentialRequest}
+                                                            disabled={isUpdatingCredentials}
+                                                            className="px-4 py-2 rounded-lg border border-rose-200 text-rose-600 text-xs font-semibold hover:bg-rose-50 transition-colors disabled:opacity-50"
+                                                        >
+                                                            Reject Request
+                                                        </button>
+                                                    )}
+                                                </div>
+
+                                                {credentialRequestError && (
+                                                    <div className="text-xs text-rose-500">{credentialRequestError}</div>
+                                                )}
+                                                {credentialActionError && (
+                                                    <div className="text-xs text-rose-500">{credentialActionError}</div>
+                                                )}
+                                                {credentialActionStatus && (
+                                                    <div className="text-xs text-emerald-500">{credentialActionStatus}</div>
+                                                )}
                                             </div>
                                         </div>
                                     </div>

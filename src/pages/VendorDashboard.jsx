@@ -28,12 +28,14 @@ import {
   getMe,
   getVendorQrs,
   getVendorWallet,
+  getVendorTransactions,
   getVendorBrand,
   getVendorCampaigns,
   getVendorOrders,
   getVendorProfile,
   getVendorProducts,
   addVendorProduct,
+  uploadImage,
   loginWithEmail,
   createVendorCampaign,
   updateVendorCampaign,
@@ -43,7 +45,8 @@ import {
   scanQr,
   updateVendorProfile,
   verifyPublicQr,
-  payVendorCampaign
+  payVendorCampaign,
+  requestVendorCredentialUpdate
 } from "../lib/api";
 import VendorAnalytics from "../components/VendorAnalytics";
 import StarBorder from "../components/StarBorder";
@@ -95,6 +98,13 @@ const formatShortDate = (value) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "-";
   return format(date, "dd MMM yyyy");
+};
+
+const formatTransactionDate = (value) => {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return format(date, "dd MMM yyyy, p");
 };
 
 const parseNumericValue = (value, fallback = 0) => {
@@ -204,6 +214,11 @@ const VendorDashboard = () => {
   const [orderStatusCounts, setOrderStatusCounts] = useState({});
   const [ordersHasMore, setOrdersHasMore] = useState(false);
 
+  const [transactions, setTransactions] = useState([]);
+  const [transactionsError, setTransactionsError] = useState("");
+  const [isLoadingTransactions, setIsLoadingTransactions] = useState(false);
+  const [showAllTransactions, setShowAllTransactions] = useState(false);
+
   const [scanHash, setScanHash] = useState("");
   const [scanStatus, setScanStatus] = useState("");
   const [scanError, setScanError] = useState("");
@@ -228,12 +243,21 @@ const VendorDashboard = () => {
     name: "",
     logoUrl: "",
     website: "",
+    qrPricePerUnit: "",
   });
   const [subscriptionInfo, setSubscriptionInfo] = useState(null);
   const [subscriptionBlocked, setSubscriptionBlocked] = useState("");
   const [registrationStatus, setRegistrationStatus] = useState("");
   const [registrationError, setRegistrationError] = useState("");
   const [isSavingRegistration, setIsSavingRegistration] = useState(false);
+  const [credentialRequest, setCredentialRequest] = useState({
+    username: "",
+    password: "",
+    confirmPassword: "",
+  });
+  const [credentialRequestStatus, setCredentialRequestStatus] = useState("");
+  const [credentialRequestError, setCredentialRequestError] = useState("");
+  const [isRequestingCredentialUpdate, setIsRequestingCredentialUpdate] = useState(false);
 
   const [campaigns, setCampaigns] = useState([]);
   const [overviewCampaignId, setOverviewCampaignId] = useState("all");
@@ -313,6 +337,9 @@ const VendorDashboard = () => {
   const [productError, setProductError] = useState("");
   const [isSavingProduct, setIsSavingProduct] = useState(false);
   const [isLoadingProducts, setIsLoadingProducts] = useState(false);
+  const [isUploadingProductImage, setIsUploadingProductImage] = useState(false);
+  const [productImageUploadStatus, setProductImageUploadStatus] = useState("");
+  const [productImageUploadError, setProductImageUploadError] = useState("");
 
   // QR Row Handlers
   const handleAddQrRow = () => {
@@ -377,6 +404,7 @@ const VendorDashboard = () => {
       : subscriptionStatus === "paused"
         ? "Subscription paused"
         : "Subscription inactive";
+  const qrPricePerUnit = parseNumericValue(brandProfile?.qrPricePerUnit, 1);
 
   const getQrValue = (hash) => {
     const envBase = import.meta.env.VITE_QR_BASE_URL;
@@ -577,6 +605,18 @@ const VendorDashboard = () => {
     setOrdersPage(1);
     setOrderStatusCounts({});
     setOrdersHasMore(false);
+    setTransactions([]);
+    setTransactionsError("");
+    setIsLoadingTransactions(false);
+    setShowAllTransactions(false);
+    setCredentialRequest({
+      username: "",
+      password: "",
+      confirmPassword: "",
+    });
+    setCredentialRequestStatus("");
+    setCredentialRequestError("");
+    setIsRequestingCredentialUpdate(false);
   };
 
   const handleVendorAccessError = (err) => {
@@ -696,6 +736,25 @@ const VendorDashboard = () => {
     }
   };
 
+  const loadTransactions = async (authToken = token) => {
+    if (!authToken) return;
+    setIsLoadingTransactions(true);
+    setTransactionsError("");
+    try {
+      const data = await getVendorTransactions(authToken);
+      setTransactions(Array.isArray(data) ? data : data?.transactions || []);
+    } catch (err) {
+      if (handleVendorAccessError(err)) return;
+      if (err.status === 404) {
+        setTransactions([]);
+      } else {
+        setTransactionsError(err.message || "Unable to load transactions.");
+      }
+    } finally {
+      setIsLoadingTransactions(false);
+    }
+  };
+
   const loadCompanyProfile = async (authToken = token) => {
     if (!authToken) return;
     setRegistrationError("");
@@ -732,6 +791,10 @@ const VendorDashboard = () => {
         name: data.name || "",
         logoUrl: data.logoUrl || "",
         website: data.website || "",
+        qrPricePerUnit:
+          data.qrPricePerUnit !== undefined && data.qrPricePerUnit !== null
+            ? Number(data.qrPricePerUnit)
+            : "",
       });
       setSubscriptionInfo(data.subscription || data.Subscription || null);
       setSubscriptionBlocked("");
@@ -743,6 +806,7 @@ const VendorDashboard = () => {
           name: "",
           logoUrl: "",
           website: "",
+          qrPricePerUnit: "",
         });
         setSubscriptionInfo(null);
       } else {
@@ -795,6 +859,7 @@ const VendorDashboard = () => {
       await Promise.all([
         loadQrs(token),
         loadOrders(token),
+        loadTransactions(token),
         loadCompanyProfile(token),
         loadBrandProfile(token),
         loadCampaigns(token),
@@ -803,6 +868,17 @@ const VendorDashboard = () => {
     };
     initializeVendorData();
   }, [token, subscriptionBlocked]);
+
+  useEffect(() => {
+    if (!vendorInfo) return;
+    setCredentialRequest((prev) => {
+      if (prev.username) return prev;
+      return {
+        ...prev,
+        username: vendorInfo.username || vendorInfo.email || "",
+      };
+    });
+  }, [vendorInfo]);
 
   useEffect(() => {
     if (!selectedCampaign) {
@@ -894,6 +970,7 @@ const VendorDashboard = () => {
       name: "",
       logoUrl: "",
       website: "",
+      qrPricePerUnit: "",
     });
     setCampaigns([]);
     setCampaignId("");
@@ -914,6 +991,7 @@ const VendorDashboard = () => {
       setWalletStatus("Wallet recharged successfully.");
       setRechargeAmount("");
       await loadWallet();
+      await loadTransactions();
     } catch (err) {
       if (handleVendorAccessError(err)) return;
       setWalletError(err.message || "Recharge failed.");
@@ -1038,6 +1116,7 @@ const VendorDashboard = () => {
       if (newHashes.length > 0) {
         setLastOrderHashes(newHashes.slice(0, 10));
         await loadWallet();
+        await loadTransactions();
         await loadQrs();
         await loadOrders();
       }
@@ -1130,6 +1209,49 @@ const VendorDashboard = () => {
       setRegistrationError(err.message || "Unable to save profile.");
     } finally {
       setIsSavingRegistration(false);
+    }
+  };
+
+  const handleCredentialRequestChange = (field) => (event) => {
+    setCredentialRequest((prev) => ({ ...prev, [field]: event.target.value }));
+    setCredentialRequestStatus("");
+    setCredentialRequestError("");
+  };
+
+  const handleCredentialRequestSubmit = async () => {
+    const trimmedUsername = credentialRequest.username.trim();
+    const hasUsername = Boolean(trimmedUsername);
+    const hasPassword = Boolean(credentialRequest.password);
+
+    if (!hasUsername && !hasPassword) {
+      setCredentialRequestError("Enter a username or password to request an update.");
+      return;
+    }
+
+    if (hasPassword && credentialRequest.password !== credentialRequest.confirmPassword) {
+      setCredentialRequestError("Passwords do not match.");
+      return;
+    }
+
+    setCredentialRequestError("");
+    setCredentialRequestStatus("");
+    setIsRequestingCredentialUpdate(true);
+    try {
+      await requestVendorCredentialUpdate(token, {
+        username: hasUsername ? trimmedUsername : undefined,
+        password: hasPassword ? credentialRequest.password : undefined,
+      });
+      setCredentialRequestStatus("Request sent to admin for approval.");
+      setCredentialRequest((prev) => ({
+        ...prev,
+        password: "",
+        confirmPassword: "",
+      }));
+    } catch (err) {
+      if (handleVendorAccessError(err)) return;
+      setCredentialRequestError(err.message || "Unable to request credential update.");
+    } finally {
+      setIsRequestingCredentialUpdate(false);
     }
   };
 
@@ -1286,7 +1408,7 @@ const VendorDashboard = () => {
 
     try {
       const totalQty = (campaign.allocations || []).reduce((sum, a) => sum + (parseInt(a.quantity) || 0), 0);
-      const printCost = totalQty * 1;
+      const printCost = totalQty * qrPricePerUnit;
       const baseBudget = parseNumericValue(
         campaign.subtotal,
         parseNumericValue(campaign.totalBudget, 0)
@@ -1302,6 +1424,7 @@ const VendorDashboard = () => {
       setCampaignStatusWithTimeout("Campaign paid and activated!");
       setSelectedPendingCampaign(null);
       await loadWallet();
+      await loadTransactions();
       await loadCampaigns(); // To move it to active list
     } catch (err) {
       if (handleVendorAccessError(err)) return;
@@ -1319,11 +1442,41 @@ const VendorDashboard = () => {
     setProductForm((prev) => ({ ...prev, [field]: event.target.value }));
     setProductStatus("");
     setProductError("");
+    if (field === "imageUrl") {
+      setProductImageUploadStatus("");
+      setProductImageUploadError("");
+    }
   };
 
   const setProductStatusWithTimeout = (message) => {
     setProductStatus(message);
     setTimeout(() => setProductStatus(""), 2000);
+  };
+
+  const handleProductImageUpload = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!token) {
+      setProductImageUploadError("Please sign in first.");
+      return;
+    }
+    setIsUploadingProductImage(true);
+    setProductImageUploadStatus("");
+    setProductImageUploadError("");
+    try {
+      const data = await uploadImage(token, file);
+      const uploadedUrl = data?.url;
+      if (!uploadedUrl) {
+        throw new Error("Upload failed. No URL returned.");
+      }
+      setProductForm((prev) => ({ ...prev, imageUrl: uploadedUrl }));
+      setProductImageUploadStatus("Image uploaded.");
+    } catch (err) {
+      setProductImageUploadError(err.message || "Failed to upload image.");
+    } finally {
+      setIsUploadingProductImage(false);
+      event.target.value = "";
+    }
   };
 
   const handleAddProduct = async () => {
@@ -1373,6 +1526,8 @@ const VendorDashboard = () => {
         description: "",
         imageUrl: "",
       });
+      setProductImageUploadStatus("");
+      setProductImageUploadError("");
       await loadProducts();
     } catch (err) {
       if (handleVendorAccessError(err)) return;
@@ -1658,7 +1813,7 @@ const VendorDashboard = () => {
       campaign.subtotal,
       parseNumericValue(campaign.totalBudget, fallbackBudget)
     );
-    const printCost = totalQty * 1;
+    const printCost = totalQty * qrPricePerUnit;
     const stats = campaignQrMap.get(campaign.id);
     const priceGroups = stats?.priceGroups || [];
     const productId =
@@ -1691,7 +1846,7 @@ const VendorDashboard = () => {
       product,
       breakdownRows,
     };
-  }, [selectedActiveCampaign, campaignQrMap, products]);
+  }, [selectedActiveCampaign, campaignQrMap, products, qrPricePerUnit]);
   const activeCampaign = activeCampaignDetails?.campaign;
 
   const primaryQrRow = qrRows[0];
@@ -1703,6 +1858,7 @@ const VendorDashboard = () => {
 
   const walletBalance = wallet?.balance;
   const lockedBalance = wallet?.lockedBalance;
+  const displayedTransactions = showAllTransactions ? transactions : transactions.slice(0, 5);
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-[#0a0a0a] text-gray-900 dark:text-gray-100 p-6">
@@ -2077,7 +2233,12 @@ const VendorDashboard = () => {
                             Profile & Brand Settings
                           </div>
                           <button
-                            onClick={() => alert("To change sensitive brand or company information, please contact administrator approval.")}
+                            onClick={() => {
+                              const target = document.getElementById("credential-request");
+                              if (target) {
+                                target.scrollIntoView({ behavior: "smooth", block: "start" });
+                              }
+                            }}
                             className="text-xs bg-amber-50 text-amber-600 px-3 py-1.5 rounded-lg font-medium hover:bg-amber-100 transition-colors border border-amber-200"
                           >
                             Request Change
@@ -2114,16 +2275,19 @@ const VendorDashboard = () => {
                           </div>
                           <div className="space-y-1">
                             <label className="text-xs font-semibold text-gray-500 dark:text-gray-400">
-                              Logo URL
+                              Brand Logo
                             </label>
-                            <input
-                              type="text"
-                              value={brandProfile.logoUrl}
-                              readOnly
-                              disabled
-                              placeholder="https://..."
-                              className="w-full rounded-xl border border-gray-200 dark:border-zinc-800 bg-white/80 dark:bg-zinc-900/80 px-3 py-2 text-sm text-gray-600 dark:text-gray-300 cursor-not-allowed"
-                            />
+                            {brandProfile.logoUrl ? (
+                              <img
+                                src={brandProfile.logoUrl}
+                                alt="Brand logo"
+                                className="h-12 w-12 rounded-lg object-cover border border-gray-200 dark:border-zinc-800"
+                              />
+                            ) : (
+                              <div className="text-xs text-gray-500 dark:text-gray-400">
+                                No logo uploaded
+                              </div>
+                            )}
                           </div>
                           <div className="space-y-1">
                             <label className="text-xs font-semibold text-gray-500 dark:text-gray-400">
@@ -2200,6 +2364,70 @@ const VendorDashboard = () => {
                         >
                           Updates disabled (Admin Entry Only)
                         </button>
+                        <div
+                          id="credential-request"
+                          className="mt-6 rounded-xl border border-gray-100 dark:border-gray-800 bg-white dark:bg-[#111] p-4 space-y-4"
+                        >
+                          <div className="flex items-center gap-2 text-sm font-semibold text-gray-800 dark:text-gray-200">
+                            <ShieldCheck size={16} className="text-emerald-400" />
+                            Request login credential update
+                          </div>
+                          <p className="text-xs text-gray-500">
+                            Submit a request to change your username or password. Admin approval is required.
+                          </p>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div className="space-y-1">
+                              <label className="text-xs font-semibold text-gray-500 dark:text-gray-400">
+                                Username
+                              </label>
+                              <input
+                                type="text"
+                                value={credentialRequest.username}
+                                onChange={handleCredentialRequestChange("username")}
+                                placeholder={vendorInfo?.username || vendorInfo?.email || "Enter new username"}
+                                className="w-full rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-gray-900 dark:text-gray-100"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-xs font-semibold text-gray-500 dark:text-gray-400">
+                                New password
+                              </label>
+                              <input
+                                type="password"
+                                value={credentialRequest.password}
+                                onChange={handleCredentialRequestChange("password")}
+                                placeholder="Enter new password"
+                                className="w-full rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-gray-900 dark:text-gray-100"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-xs font-semibold text-gray-500 dark:text-gray-400">
+                                Confirm password
+                              </label>
+                              <input
+                                type="password"
+                                value={credentialRequest.confirmPassword}
+                                onChange={handleCredentialRequestChange("confirmPassword")}
+                                placeholder="Confirm password"
+                                className="w-full rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-gray-900 dark:text-gray-100"
+                              />
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleCredentialRequestSubmit}
+                            disabled={isRequestingCredentialUpdate}
+                            className="w-full rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-semibold py-2 transition-colors disabled:opacity-60"
+                          >
+                            {isRequestingCredentialUpdate ? "Sending request..." : "Send request to admin"}
+                          </button>
+                          {credentialRequestStatus && (
+                            <div className="text-xs text-emerald-500 font-semibold">{credentialRequestStatus}</div>
+                          )}
+                          {credentialRequestError && (
+                            <div className="text-xs text-rose-500 font-semibold">{credentialRequestError}</div>
+                          )}
+                        </div>
                         {registrationStatus && (
                           <div className="text-xs text-green-600 font-semibold">{registrationStatus}</div>
                         )}
@@ -2766,13 +2994,13 @@ Quantity: ${invoiceData.quantity} QRs
                                         {/* QR Generation Cost Row */}
                                         <tr>
                                           <td className="px-4 py-3 text-gray-500 font-normal">
-                                            QR Generation Cost (₹1/QR)
+                                            QR Generation Cost (INR {formatAmount(qrPricePerUnit)}/QR)
                                           </td>
                                           <td className="px-4 py-3 text-center text-gray-500 font-normal">
                                             -
                                           </td>
                                           <td className="px-4 py-3 text-right font-normal text-gray-600 dark:text-gray-400">
-                                            + ₹{(selectedPendingCampaign.allocations || []).reduce((sum, a) => sum + (parseInt(a.quantity) || 0), 0).toFixed(2)}
+                                            + INR {((selectedPendingCampaign.allocations || []).reduce((sum, a) => sum + (parseInt(a.quantity) || 0), 0) * qrPricePerUnit).toFixed(2)}
                                           </td>
                                         </tr>
                                       </tfoot>
@@ -2789,9 +3017,9 @@ Quantity: ${invoiceData.quantity} QRs
                                   <div className="flex items-center justify-between text-base font-bold text-emerald-700 dark:text-emerald-400">
                                     <span>Total Payable</span>
                                     <span>
-                                      ₹{(
+                                      INR {(
                                         parseFloat(selectedPendingCampaign.subtotal || selectedPendingCampaign.totalBudget || 0) +
-                                        ((selectedPendingCampaign.allocations || []).reduce((sum, a) => sum + (parseInt(a.quantity) || 0), 0) * 1)
+                                        ((selectedPendingCampaign.allocations || []).reduce((sum, a) => sum + (parseInt(a.quantity) || 0), 0) * qrPricePerUnit)
                                       ).toFixed(2)}
                                     </span>
                                   </div>
@@ -3167,14 +3395,32 @@ Quantity: ${invoiceData.quantity} QRs
                             />
                           </div>
                           <div className="space-y-1">
-                            <label className="text-[10px] font-medium text-gray-500">Image URL</label>
+                            <label className="text-[10px] font-medium text-gray-500">Product Image</label>
                             <input
-                              type="text"
-                              value={productForm.imageUrl}
-                              onChange={handleProductChange("imageUrl")}
-                              placeholder="https://..."
-                              className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#0f0f0f] px-3 py-1.5 text-xs text-gray-900 dark:text-white placeholder-gray-500"
+                              type="file"
+                              accept="image/*"
+                              onChange={handleProductImageUpload}
+                              className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#0f0f0f] px-3 py-1.5 text-xs text-gray-900 dark:text-white"
                             />
+                            {productForm.imageUrl && (
+                              <div className="flex items-center gap-2 text-[10px] text-gray-500">
+                                <img
+                                  src={productForm.imageUrl}
+                                  alt="Product preview"
+                                  className="h-8 w-8 rounded-md object-cover border border-gray-200 dark:border-gray-700"
+                                />
+                                <span>Image uploaded</span>
+                              </div>
+                            )}
+                            {isUploadingProductImage && (
+                              <div className="text-[10px] text-gray-400">Uploading...</div>
+                            )}
+                            {productImageUploadStatus && (
+                              <div className="text-[10px] text-emerald-500 font-semibold">{productImageUploadStatus}</div>
+                            )}
+                            {productImageUploadError && (
+                              <div className="text-[10px] text-red-500 font-semibold">{productImageUploadError}</div>
+                            )}
                           </div>
                         </div>
                         <div className="space-y-1">
@@ -3299,6 +3545,89 @@ Quantity: ${invoiceData.quantity} QRs
                           <div className="text-xs text-green-600 font-semibold">{walletStatus}</div>
                         )}
                         {walletError && <div className="text-xs text-red-600 font-semibold">{walletError}</div>}
+                        <div className="pt-4 border-t border-gray-100 dark:border-zinc-800 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <div className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+                              Transaction history
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => loadTransactions()}
+                              disabled={isLoadingTransactions}
+                              className="flex items-center gap-1 text-[11px] font-semibold text-gray-400 hover:text-white disabled:opacity-60"
+                            >
+                              <RefreshCw size={12} />
+                              Refresh
+                            </button>
+                          </div>
+                          {isLoadingTransactions && (
+                            <div className="text-xs text-gray-500 dark:text-gray-400">Loading transactions...</div>
+                          )}
+                          {transactionsError && (
+                            <div className="text-xs text-red-600 font-semibold">{transactionsError}</div>
+                          )}
+                          {!isLoadingTransactions && transactions.length === 0 && !transactionsError && (
+                            <div className="text-xs text-gray-500 dark:text-gray-400">
+                              No transactions yet.
+                            </div>
+                          )}
+                          {transactions.length > 0 && (
+                            <div className="overflow-x-auto rounded-xl border border-gray-100 dark:border-zinc-800">
+                              <table className="w-full text-xs">
+                                <thead className="bg-gray-50 dark:bg-zinc-800/50 text-gray-500">
+                                  <tr>
+                                    <th className="px-3 py-2 text-left font-semibold">Date</th>
+                                    <th className="px-3 py-2 text-left font-semibold">Category</th>
+                                    <th className="px-3 py-2 text-left font-semibold">Type</th>
+                                    <th className="px-3 py-2 text-right font-semibold">Amount</th>
+                                    <th className="px-3 py-2 text-left font-semibold">Status</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100 dark:divide-zinc-800">
+                                  {displayedTransactions.map((tx, idx) => {
+                                    const typeLabel = String(tx.type || "").toLowerCase();
+                                    const amountClass =
+                                      typeLabel === "credit" ? "text-emerald-500" : "text-rose-500";
+                                    const statusLabel = String(tx.status || "pending");
+                                    return (
+                                      <tr
+                                        key={tx.id || `${tx.referenceId || "tx"}-${idx}`}
+                                        className={idx % 2 === 0 ? "bg-white dark:bg-zinc-900" : "bg-gray-50 dark:bg-[#111]"}
+                                      >
+                                        <td className="px-3 py-2 text-gray-700 dark:text-gray-300">
+                                          {formatTransactionDate(tx.createdAt)}
+                                        </td>
+                                        <td className="px-3 py-2 text-gray-600 dark:text-gray-300">
+                                          {String(tx.category || "n/a").replace(/_/g, " ")}
+                                        </td>
+                                        <td className="px-3 py-2 text-gray-600 dark:text-gray-300 capitalize">
+                                          {typeLabel || "debit"}
+                                        </td>
+                                        <td className={`px-3 py-2 text-right font-semibold ${amountClass}`}>
+                                          {typeLabel === "credit" ? "+" : "-"}INR {formatAmount(tx.amount)}
+                                        </td>
+                                        <td className="px-3 py-2">
+                                          <span className={`text-[10px] font-semibold ${getStatusClasses(statusLabel)}`}>
+                                            {statusLabel}
+                                          </span>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                          {transactions.length > 5 && (
+                            <button
+                              type="button"
+                              onClick={() => setShowAllTransactions((prev) => !prev)}
+                              className="text-[11px] font-semibold text-gray-400 hover:text-white"
+                            >
+                              {showAllTransactions ? "Show less" : `View all (${transactions.length})`}
+                            </button>
+                          )}
+                        </div>
                       </div>
                     )}
 

@@ -57,6 +57,7 @@ import {
   updateAdminUserStatus,
   getAdminVendors,
   getAdminBrands,
+  uploadImage,
   getAdminVendorOverview,
   updateAdminVendorDetails,
   getAdminBrandOverview,
@@ -85,6 +86,7 @@ import {
 
 const ADMIN_TOKEN_KEY = "cashback_admin_token";
 const ADMIN_SIDEBAR_KEY = "cashback_admin_sidebar";
+const MAX_QR_PRICE = 100;
 
 const navItems = [
   { id: "overview", label: "Overview", icon: LayoutGrid },
@@ -164,6 +166,7 @@ const getDefaultBrandFormState = () => ({
   subscriptionDuration: "MONTHS_12",
   vendorEmail: "",
   vendorPhone: "",
+  qrPricePerUnit: "1.00",
 });
 
 const getDefaultCampaignEditFormState = () => ({
@@ -397,6 +400,9 @@ const AdminDashboard = () => {
   const [vendorActionStatus, setVendorActionStatus] = useState("");
   const [vendorActionError, setVendorActionError] = useState("");
   const [brandForm, setBrandForm] = useState(() => getDefaultBrandFormState());
+  const [isUploadingBrandLogo, setIsUploadingBrandLogo] = useState(false);
+  const [brandLogoUploadStatus, setBrandLogoUploadStatus] = useState("");
+  const [brandLogoUploadError, setBrandLogoUploadError] = useState("");
   const [isCreatingBrand, setIsCreatingBrand] = useState(false);
   const [brandCreationMessage, setBrandCreationMessage] = useState("");
   const [brandCreationError, setBrandCreationError] = useState("");
@@ -1145,6 +1151,36 @@ const AdminDashboard = () => {
     setBrandCreationMessage("");
     setCreatedBrandCredentials(null);
     setCreatedBrandDetails(null);
+    if (field === "logoUrl") {
+      setBrandLogoUploadStatus("");
+      setBrandLogoUploadError("");
+    }
+  };
+
+  const handleBrandLogoUpload = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!token) {
+      setBrandLogoUploadError("Please sign in first.");
+      return;
+    }
+    setBrandLogoUploadStatus("");
+    setBrandLogoUploadError("");
+    setIsUploadingBrandLogo(true);
+    try {
+      const data = await uploadImage(token, file);
+      const uploadedUrl = data?.url;
+      if (!uploadedUrl) {
+        throw new Error("Upload failed. No URL returned.");
+      }
+      setBrandForm((prev) => ({ ...prev, logoUrl: uploadedUrl }));
+      setBrandLogoUploadStatus("Logo uploaded.");
+    } catch (err) {
+      setBrandLogoUploadError(err.message || "Failed to upload logo.");
+    } finally {
+      setIsUploadingBrandLogo(false);
+      event.target.value = "";
+    }
   };
 
   const handleCreateBrand = async () => {
@@ -1154,6 +1190,11 @@ const AdminDashboard = () => {
     }
     if (!brandForm.subscriptionDuration) {
       setBrandCreationError("Select a subscription duration.");
+      return;
+    }
+    const priceValue = brandForm.qrPricePerUnit === "" ? null : Number(brandForm.qrPricePerUnit);
+    if (priceValue !== null && (!Number.isFinite(priceValue) || priceValue <= 0 || priceValue > MAX_QR_PRICE)) {
+      setBrandCreationError(`QR price per unit must be between 0.01 and ${MAX_QR_PRICE}.`);
       return;
     }
 
@@ -1171,6 +1212,7 @@ const AdminDashboard = () => {
         subscriptionType: brandForm.subscriptionDuration,
         vendorEmail: brandForm.vendorEmail.trim() || undefined,
         vendorPhone: brandForm.vendorPhone.trim() || undefined,
+        qrPricePerUnit: priceValue ?? undefined,
       };
 
       const data = await createAdminBrand(token, payload);
@@ -1181,14 +1223,9 @@ const AdminDashboard = () => {
         vendor: data?.vendor,
         subscription: data?.subscription,
       });
-      setBrandForm({
-        brandName: "",
-        logoUrl: "",
-        website: "",
-        subscriptionDuration: "MONTHS_12",
-        vendorEmail: "",
-        vendorPhone: "",
-      });
+      setBrandForm(getDefaultBrandFormState());
+      setBrandLogoUploadStatus("");
+      setBrandLogoUploadError("");
       await loadVendors(token);
       await loadSubscriptions(token, subscriptionFilter);
     } catch (err) {
@@ -1449,11 +1486,6 @@ const AdminDashboard = () => {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isAccountModalOpen]);
 
-  /* --- QR Order PDF Handler for Admin Dashboard --- */
-  const getQrValue = (uniqueHash) => `https://incentify.com/qr/${uniqueHash}`;
-  const getBatchCanvasId = (uniqueHash) => `pdf-qr-${uniqueHash}`;
-  const getQrCanvasId = (uniqueHash) => `qr-${uniqueHash}`;
-
   const handleDownloadOrderPdf = async (order) => {
     if (!order || !order.id) return;
     try {
@@ -1462,14 +1494,13 @@ const AdminDashboard = () => {
 
       // Fetch QRs for this specific order
       const data = await getAdminQrBatch(token, { orderId: order.id });
+      const qrsToPrint = Array.isArray(data) ? data : data?.items || data?.qrs || [];
 
-      if (!data || !data.qrs || data.qrs.length === 0) {
+      if (!qrsToPrint.length) {
         setQrBatchError("No QRs found for this order.");
         setIsPreparingBatchPdf(false);
         return;
       }
-
-      const qrsToPrint = data.qrs;
       setBatchQrs(qrsToPrint);
       setQrBatchStatus(`Generating PDF for ${qrsToPrint.length} QRs...`);
 
@@ -1485,12 +1516,19 @@ const AdminDashboard = () => {
       const boxHeight = 60;
       const xGap = (pageWidth - cols * boxWidth) / 3;
       const yGap = (pageHeight - rows * boxHeight) / 5;
+      const perQrPrice = order.quantity ? Number(order.printCost || 0) / order.quantity : 0;
+      const perQrLabel = Number.isFinite(perQrPrice) && perQrPrice > 0 ? formatAmount(perQrPrice) : "0.00";
+      const printCostLabel = formatAmount(order.printCost || 0);
+      const headerOffset = 36;
 
       // Draw Header for context
       doc.setFontSize(16);
       doc.text(`QR Batch: ${order.campaignTitle || "Campaign"}`, pageWidth / 2, 15, { align: "center" });
       doc.setFontSize(10);
       doc.text(`Order ID: ${order.id} | Qty: ${order.quantity}`, pageWidth / 2, 22, { align: "center" });
+      doc.text(`QR price: INR ${perQrLabel}/QR | Print cost: INR ${printCostLabel}`, pageWidth / 2, 28, {
+        align: "center",
+      });
 
       // Loop and draw QRs
       for (let i = 0; i < qrsToPrint.length; i++) {
@@ -1509,7 +1547,7 @@ const AdminDashboard = () => {
           }
 
           const x = xGap + col * (boxWidth + xGap);
-          const y = 30 + yGap + row * (boxHeight + yGap); // Offset for header
+          const y = headerOffset + yGap + row * (boxHeight + yGap); // Offset for header
 
           // Card Border
           doc.setDrawColor(200, 200, 200);
@@ -1662,6 +1700,9 @@ const AdminDashboard = () => {
       const metaParts = [];
       if (campaignLabel) metaParts.push(`Campaign: ${campaignLabel}`);
       if (quantityLabel) metaParts.push(quantityLabel);
+      if (metadata.requestedUsername) {
+        metaParts.push(`Username: ${metadata.requestedUsername}`);
+      }
       if (
         metadata.status &&
         (!campaignLabel || campaignLabel.toLowerCase() !== metadata.status.toLowerCase())
@@ -1709,11 +1750,18 @@ const AdminDashboard = () => {
     QR_ORDER_ATTENTION_STATUSES.includes(String(order?.status || "").toLowerCase())
   )?.length || 0;
   const orderAttentionCount = ordersAwaitingAction || dashboardStats?.ordersAttention || 0;
+
+  // Count pending QR orders (paid but not shipped)
+  const pendingQrOrders = orders?.filter((order) =>
+    ['paid', 'pending'].includes(String(order?.status || "").toLowerCase())
+  )?.length || 0;
+  const pendingQrOrderCount = pendingQrOrders || dashboardStats?.ordersAttention || 0;
+
   const totalQrsCount = dashboardStats?.totalQrs || 0;
 
-  const effectiveUserStatusCounts = dashboardStats?.userStats || { active: users?.filter(u => u.status === 'active')?.length || 0 };
-  const effectiveVendorStatusCounts = dashboardStats?.vendorStats || { active: vendors?.filter(v => v.status === 'active')?.length || 0 };
-  const totalBalance = dashboardStats?.totalBalance || 0;
+  const effectiveUserStatusCounts = dashboardStats?.userStatusCounts || { active: users?.filter(u => u.status === 'active')?.length || 0 };
+  const effectiveVendorStatusCounts = dashboardStats?.vendorStatusCounts || { active: vendors?.filter(v => v.status === 'active')?.length || 0 };
+  const totalBalance = dashboardStats?.totalWalletBalance || 0;
 
   const notificationCount = pendingWithdrawalCount + orderAttentionCount;
 
@@ -1940,11 +1988,31 @@ const AdminDashboard = () => {
   const handleRequestClick = (request) => {
     if (!request?.type) return;
     if (request.type === "order") {
+      const payload = request?.payload || {};
+      const orderId = payload.orderId || payload.id;
+      if (orderId) {
+        const orderFromList = orders.find((order) => order.id === orderId);
+        const fallbackOrder = orderFromList || {
+          id: orderId,
+          campaignTitle: payload.campaignTitle,
+          quantity: payload.quantity,
+          cashbackAmount: payload.cashbackAmount,
+        };
+        handleDownloadOrderPdf(fallbackOrder);
+      }
       handleNavClick("orders");
       return;
     }
     if (request.type === "withdrawal") {
       handleNavClick("payouts");
+      return;
+    }
+    if (request.type === "notification") {
+      const vendorId = request?.payload?.vendorId || "";
+      const brandId = request?.payload?.brandId || "";
+      if (vendorId || brandId) {
+        handleAccountView({ vendorId, brandId });
+      }
     }
   };
   const normalizedSearch = searchQuery.trim().toLowerCase();
@@ -2274,8 +2342,13 @@ const AdminDashboard = () => {
     // Filter by Brand
     if (filterBrandId !== "all") {
       const bId = filterBrandId;
-      _transactions = _transactions.filter(t => t.Wallet?.Vendor?.brandId === bId || t.Wallet?.Vendor?.Brand?.id === bId);
-      _orders = _orders.filter(o => o.Vendor?.brandId === bId || o.Vendor?.Brand?.id === bId);
+      _transactions = _transactions.filter(
+        t => t.Wallet?.Vendor?.Brand?.id === bId || t.Wallet?.Vendor?.brandId === bId
+      );
+      _orders = _orders.filter(o => {
+        const orderBrandId = o.brandId || o.vendor?.brandId || o.vendor?.Brand?.id;
+        return orderBrandId === bId;
+      });
       _qrs = _qrs.filter(q => q.Campaign?.Brand?.id === bId || q.Campaign?.brandId === bId);
     }
 
@@ -2287,15 +2360,15 @@ const AdminDashboard = () => {
         return vid === vId;
       });
       _orders = _orders.filter(o => {
-        const vid = o.Vendor?.id || o.vendorId;
+        const vid = o.vendorId || o.vendor?.id;
         return vid === vId;
       });
       _qrs = _qrs.filter(q => {
-        // QR -> Campaign -> Vendor/Brand
-        // Assuming Campaign object has Vendor or we can look it up.
-        // If QRs are populated with Campaign.
-        const vid = q.Campaign?.vendorId || q.Campaign?.Vendor?.id;
-        // Fallback: If filtered by vendor, maybe we should also filter QRs by campaign if needed, but primarily via relation.
+        const vid =
+          q.vendorId ||
+          q.Campaign?.vendorId ||
+          q.Campaign?.Vendor?.id ||
+          q.Campaign?.Brand?.Vendor?.id;
         return vid === vId;
       });
     }
@@ -2368,7 +2441,7 @@ const AdminDashboard = () => {
   }, [analyticsMetric, analyticsRange, transactionSeries, transactionTotals, users, effectiveQrs]);
 
   // Analytics Stats Cards
-  const totalUsersCount = dashboardStats?.totalUsers || users.length || 0;
+  const totalUsersCount = dashboardStats?.users || users.length || 0;
   const displayedVendorsCount = useMemo(() => {
     if (filterVendorId !== "all") return 1;
     if (filterBrandId !== "all") return vendors.filter(v => v.brandId === filterBrandId || v.Brand?.id === filterBrandId).length;
@@ -2607,7 +2680,7 @@ const AdminDashboard = () => {
                     <Activity className="text-[#81cc2a]" size={18} />
                     <h3 className="text-base font-bold text-slate-900 dark:text-white">Requires Attention</h3>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     <div className="bg-slate-50 dark:bg-white/5 rounded-lg p-4 border border-slate-100 dark:border-white/5">
                       <div className="flex items-center justify-between">
                         <div>
@@ -2624,6 +2697,15 @@ const AdminDashboard = () => {
                           <div className="text-xl font-bold text-amber-500 mt-1">{orderAttentionCount}</div>
                         </div>
                         <Package className="text-amber-400/50" size={28} />
+                      </div>
+                    </div>
+                    <div className="bg-slate-50 dark:bg-white/5 rounded-lg p-4 border border-slate-100 dark:border-white/5">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="text-xs text-slate-500 font-medium">Pending QR Orders</div>
+                          <div className="text-xl font-bold text-amber-500 mt-1">{pendingQrOrderCount}</div>
+                        </div>
+                        <QrCode className="text-amber-400/50" size={28} />
                       </div>
                     </div>
                   </div>
@@ -3733,17 +3815,17 @@ const AdminDashboard = () => {
                 )}
               </div>
               {showBrandCreation && (
-                <div id="vendors-create" className={`${adminPanelClass} space-y-5`}>
-                  <div className="flex items-center justify-between">
+                <div id="vendors-create" className={`${adminPanelClass} p-6 space-y-5`}>
+                  <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                     <div>
-                      <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
+                      <h3 className="text-lg font-semibold text-slate-900 dark:text-white leading-snug">
                         Create Brand & Vendor
                       </h3>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                      <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
                         Brand name will be the vendor username; an 8-digit password is generated and shown once.
                       </p>
                     </div>
-                    <span className="text-xs text-slate-500 dark:text-slate-300">
+                    <span className="text-xs text-slate-500 dark:text-slate-300 leading-relaxed md:text-right">
                       Pick a subscription duration to provision access.
                     </span>
                   </div>
@@ -3783,6 +3865,47 @@ const AdminDashboard = () => {
                       />
                     </div>
                     <div className="space-y-1">
+                      <label className="text-xs font-semibold text-slate-500 dark:text-slate-400">Brand Logo</label>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleBrandLogoUpload}
+                        className={adminInputClass}
+                      />
+                      {brandForm.logoUrl && (
+                        <div className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400">
+                          <img
+                            src={brandForm.logoUrl}
+                            alt="Brand logo preview"
+                            className="h-8 w-8 rounded-lg object-cover border border-slate-200/70 dark:border-white/10"
+                          />
+                          <span>Logo uploaded</span>
+                        </div>
+                      )}
+                      {isUploadingBrandLogo && (
+                        <div className="text-[11px] text-slate-500">Uploading...</div>
+                      )}
+                      {brandLogoUploadStatus && (
+                        <div className="text-[11px] text-emerald-600">{brandLogoUploadStatus}</div>
+                      )}
+                      {brandLogoUploadError && (
+                        <div className="text-[11px] text-rose-600">{brandLogoUploadError}</div>
+                      )}
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-slate-500 dark:text-slate-400">QR price per unit (INR)</label>
+                      <input
+                        type="number"
+                        min="0.01"
+                        max={MAX_QR_PRICE}
+                        step="0.01"
+                        value={brandForm.qrPricePerUnit}
+                        onChange={handleBrandFormChange("qrPricePerUnit")}
+                        placeholder="1.00"
+                        className={adminInputClass}
+                      />
+                    </div>
+                    <div className="space-y-1">
                       <label className="text-xs font-semibold text-slate-500 dark:text-slate-400">Vendor Email</label>
                       <input
                         type="email"
@@ -3817,7 +3940,7 @@ const AdminDashboard = () => {
                   {brandCreationError && (
                     <div className="text-xs text-rose-600">{brandCreationError}</div>
                   )}
-                  <div className="space-y-1 text-[11px] text-slate-700 dark:text-slate-300">
+                  <div className="space-y-1 text-[11px] text-slate-700 dark:text-slate-300 leading-relaxed">
                     <div className="flex items-center gap-2">
                       <span className="font-semibold">Vendor username:</span>
                       <span className="font-mono">
@@ -4042,6 +4165,7 @@ const AdminDashboard = () => {
                         <thead className="bg-slate-50 dark:bg-white/5">
                           <tr>
                             <th className="text-left py-3 px-3 text-slate-900 dark:text-white/60 font-medium">Brand</th>
+                            <th className="text-left py-3 px-3 text-slate-900 dark:text-white/60 font-medium">QR Price</th>
                             <th className="text-left py-3 px-3 text-slate-900 dark:text-white/60 font-medium">Vendor</th>
                             <th className="text-left py-3 px-3 text-slate-900 dark:text-white/60 font-medium">Status</th>
                             <th className="text-left py-3 px-3 text-slate-900 dark:text-white/60 font-medium">Ends</th>
@@ -4055,6 +4179,11 @@ const AdminDashboard = () => {
                             >
                               <td className="py-3 px-3 text-slate-900 dark:text-white">
                                 {subscription.Brand?.name || "Brand"}
+                              </td>
+                              <td className="py-3 px-3 text-slate-900 dark:text-white">
+                                {Number.isFinite(Number(subscription.Brand?.qrPricePerUnit))
+                                  ? `INR ${formatAmount(subscription.Brand?.qrPricePerUnit)}/QR`
+                                  : "-"}
                               </td>
                               <td className="py-3 px-3 text-slate-900 dark:text-white">
                                 {subscription.Brand?.Vendor?.businessName ||
@@ -4100,6 +4229,7 @@ const AdminDashboard = () => {
                           <th className="text-left py-4 px-6 text-slate-900 dark:text-white/60 font-medium">Contact</th>
                           <th className="text-left py-4 px-6 text-slate-900 dark:text-white/60 font-medium">Email</th>
                           <th className="text-left py-4 px-6 text-slate-900 dark:text-white/60 font-medium">Subscription</th>
+                          <th className="text-left py-4 px-6 text-slate-900 dark:text-white/60 font-medium">QR Price</th>
                           <th className="text-left py-4 px-6 text-slate-900 dark:text-white/60 font-medium">Status</th>
                           <th className="text-left py-4 px-6 text-slate-900 dark:text-white/60 font-medium">Created</th>
                           <th className="text-left py-4 px-6 text-slate-900 dark:text-white/60 font-medium">Actions</th>
@@ -4112,8 +4242,13 @@ const AdminDashboard = () => {
                             vendor.businessName ||
                             vendor.User?.name ||
                             "Vendor";
+                          const brandLogo = vendor.Brand?.logoUrl;
                           const subscriptionStatus = vendor.Brand?.Subscription?.status;
                           const subscriptionEnds = vendor.Brand?.Subscription?.endDate;
+                          const qrPrice = vendor.Brand?.qrPricePerUnit;
+                          const qrPriceLabel = Number.isFinite(Number(qrPrice))
+                            ? `INR ${formatAmount(qrPrice)}/QR`
+                            : "-";
                           const isViewing = isAccountModalOpen && selectedVendorId === vendor.id;
                           return (
                             <tr
@@ -4121,12 +4256,27 @@ const AdminDashboard = () => {
                               className="border-t border-slate-200/70 dark:border-white/5 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors"
                             >
                               <td className="py-4 px-6 text-slate-900 dark:text-white">
-                                <div className="font-medium">{brandName}</div>
-                                {vendor.Brand?.status && (
-                                  <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                                    Brand: {vendor.Brand.status}
+                                <div className="flex items-center gap-3">
+                                  {brandLogo ? (
+                                    <img
+                                      src={brandLogo}
+                                      alt={`${brandName} logo`}
+                                      className="h-9 w-9 rounded-lg object-cover border border-slate-200/70 dark:border-white/10"
+                                    />
+                                  ) : (
+                                    <div className="h-9 w-9 rounded-lg bg-slate-100 dark:bg-white/10 border border-slate-200/70 dark:border-white/10 flex items-center justify-center text-[11px] font-semibold text-slate-500">
+                                      {brandName?.slice(0, 2)?.toUpperCase()}
+                                    </div>
+                                  )}
+                                  <div>
+                                    <div className="font-medium">{brandName}</div>
+                                    {vendor.Brand?.status && (
+                                      <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                                        Brand: {vendor.Brand.status}
+                                      </div>
+                                    )}
                                   </div>
-                                )}
+                                </div>
                               </td>
                               <td className="py-4 px-6 text-slate-900 dark:text-white/60">
                                 {vendor.contactPhone || vendor.User?.phoneNumber || "-"}
@@ -4149,6 +4299,9 @@ const AdminDashboard = () => {
                                     </span>
                                   )}
                                 </div>
+                              </td>
+                              <td className="py-4 px-6 text-slate-900 dark:text-white/60">
+                                {qrPriceLabel}
                               </td>
                               <td className="py-4 px-6">
                                 <span
